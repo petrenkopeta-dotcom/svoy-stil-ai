@@ -1,0 +1,23 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "node --test src/*.test.js server/*.test.js",
+    "auth:bff": "node server/authBff.mjs",
+    "auth:diagnose": "node scripts/auth-config-diagnostics.mjs",
+    "preview": "vite preview",
+    "repo:check": "node scripts/check-repository-boundary.mjs",
+    "format:check": "prettier --check package.json vite.config.js src server"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "6.0.4",
+    "lucide-react": "1.27.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "vite": "8.1.5"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  }
+}

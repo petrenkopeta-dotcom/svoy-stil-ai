@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="800" viewBox="0 0 640 800" role="img" aria-label="Synthetic single garment low_light">
+  <defs>
+    <linearGradient id="glare" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#fff" stop-opacity="0"/><stop offset=".48" stop-color="#fff"/><stop offset=".62" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <pattern id="blocks" width="32" height="32" patternUnits="userSpaceOnUse"><rect width="16" height="16" fill="#bac5cf"/><rect x="16" y="16" width="16" height="16" fill="#4c6073"/></pattern>
+  </defs>
+  <rect width="640" height="800" fill="#111722"/>
+  <g  ><path d="M230 218 160 265l42 90 48-25v250h140V330l48 25 42-90-70-47-45-18c-14 31-76 31-90 0z" fill="#202a38" stroke="#d9e1e8" stroke-width="7" stroke-linejoin="round"/></g>
+  
+  <rect width="640" height="800" fill="#000" opacity=".42"/>
+</svg>

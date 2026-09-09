@@ -1,0 +1,142 @@
+{
+  "schema_version": "photo-person-06-fixtures-v1",
+  "generated_at": "deterministic",
+  "generator": "../generate-fixtures.mjs",
+  "corpus_policy": {
+    "synthetic_only": true,
+    "identifying_people": false,
+    "faces": false,
+    "downloads": false,
+    "network_required": false,
+    "biometric_processing": false,
+    "inference": [],
+    "generative_inpainting": false,
+    "subject": "one abstract garment silhouette"
+  },
+  "defaults": {
+    "width": 640,
+    "height": 800,
+    "declarations": {
+      "person": false,
+      "itemCount": 1,
+      "background": "plain",
+      "backgroundContrast": "normal",
+      "delicateDetails": false
+    },
+    "required_gate": "single garment; a person or itemCount != 1 must remain blocking"
+  },
+  "fixtures": [
+    {
+      "id": "pp06-blur",
+      "file": "pp06-blur.svg",
+      "condition": "blur",
+      "expected_disposition": "review_or_retake",
+      "oracle_strength": "calibration_candidate_not_production_truth",
+      "synthetic_only": true,
+      "person_present": false,
+      "faces": false,
+      "item_count": 1,
+      "subject": "abstract_garment_silhouette",
+      "consent_scope": "local_qa_only",
+      "deletion": "delete generated directory; regenerate deterministically"
+    },
+    {
+      "id": "pp06-low-light",
+      "file": "pp06-low-light.svg",
+      "condition": "low_light",
+      "expected_disposition": "retake",
+      "oracle_strength": "calibration_candidate_not_production_truth",
+      "synthetic_only": true,
+      "person_present": false,
+      "faces": false,
+      "item_count": 1,
+      "subject": "abstract_garment_silhouette",
+      "consent_scope": "local_qa_only",
+      "deletion": "delete generated directory; regenerate deterministically"
+    },
+    {
+      "id": "pp06-compression",
+      "file": "pp06-compression.svg",
+      "condition": "compression",
+      "expected_disposition": "review",
+      "oracle_strength": "calibration_candidate_not_production_truth",
+      "synthetic_only": true,
+      "person_present": false,
+      "faces": false,
+      "item_count": 1,
+      "subject": "abstract_garment_silhouette",
+      "consent_scope": "local_qa_only",
+      "deletion": "delete generated directory; regenerate deterministically"
+    },
+    {
+      "id": "pp06-occlusion",
+      "file": "pp06-occlusion.svg",
+      "condition": "occlusion",
+      "expected_disposition": "review_or_retake",
+      "oracle_strength": "calibration_candidate_not_production_truth",
+      "synthetic_only": true,
+      "person_present": false,
+      "faces": false,
+      "item_count": 1,
+      "subject": "abstract_garment_silhouette",
+      "consent_scope": "local_qa_only",
+      "deletion": "delete generated directory; regenerate deterministically"
+    },
+    {
+      "id": "pp06-same-color",
+      "file": "pp06-same-color.svg",
+      "condition": "same_color_background",
+      "expected_disposition": "review",
+      "oracle_strength": "calibration_candidate_not_production_truth",
+      "synthetic_only": true,
+      "person_present": false,
+      "faces": false,
+      "item_count": 1,
+      "subject": "abstract_garment_silhouette",
+      "consent_scope": "local_qa_only",
+      "deletion": "delete generated directory; regenerate deterministically"
+    },
+    {
+      "id": "pp06-motion",
+      "file": "pp06-motion.svg",
+      "condition": "motion",
+      "expected_disposition": "review_or_retake",
+      "oracle_strength": "calibration_candidate_not_production_truth",
+      "synthetic_only": true,
+      "person_present": false,
+      "faces": false,
+      "item_count": 1,
+      "subject": "abstract_garment_silhouette",
+      "consent_scope": "local_qa_only",
+      "deletion": "delete generated directory; regenerate deterministically"
+    },
+    {
+      "id": "pp06-glare",
+      "file": "pp06-glare.svg",
+      "condition": "glare",
+      "expected_disposition": "review_or_retake",
+      "oracle_strength": "calibration_candidate_not_production_truth",
+      "synthetic_only": true,
+      "person_present": false,
+      "faces": false,
+      "item_count": 1,
+      "subject": "abstract_garment_silhouette",
+      "consent_scope": "local_qa_only",
+      "deletion": "delete generated directory; regenerate deterministically"
+    },
+    {
+      "id": "pp06-tiny-subject",
+      "file": "pp06-tiny-subject.svg",
+      "condition": "tiny_subject",
+      "expected_disposition": "review_or_retake",
+      "oracle_strength": "calibration_candidate_not_production_truth",
+      "synthetic_only": true,
+      "person_present": false,
+      "faces": false,
+      "item_count": 1,
+      "subject": "abstract_garment_silhouette",
+      "consent_scope": "local_qa_only",
+      "deletion": "delete generated directory; regenerate deterministically"
+    }
+  ]
+}

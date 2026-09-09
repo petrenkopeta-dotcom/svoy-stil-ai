@@ -1,0 +1,9 @@
+.honest-readiness{border:1px solid var(--line,#d8d8d0);padding:24px;background:#f7f4ed;color:var(--ink,#20221d)}
+.honest-readiness--demo_example{border-color:#9a7855;background:#f4eadb}
+.honest-readiness--error{border-color:#a8786d;background:#f5e9e4}
+.honest-readiness__eyebrow{margin:0 0 8px;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.honest-readiness h2{margin:0 0 10px;font-size:clamp(24px,4vw,36px);line-height:1.1}
+.honest-readiness__body{max-width:60ch;margin:0 0 18px;line-height:1.5}
+.honest-readiness__items{margin:0 0 18px;padding-left:20px}
+.honest-readiness button{min-height:44px;border:1px solid currentColor;background:transparent;padding:10px 16px;font:inherit;cursor:pointer}
+.honest-readiness button:focus-visible{outline:3px solid #687660;outline-offset:3px}

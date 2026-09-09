@@ -1,0 +1,8 @@
+export const ONBOARDING_WIZARD_KEY = "ai-stylist:onboarding-wizard:v1";
+export const ONBOARDING_STEP_COUNT = 3;
+export const createWizardState = (preferences = {}) => ({ step:0, answers:{ occasion:preferences.goal||"", dressCode:preferences.style||"", fit:preferences.fit||"", thermalComfort:preferences.thermalComfort||"", colorComparison:preferences.colorComparison||"", optional:Array.isArray(preferences.limits)?preferences.limits:[] }, consent:false });
+export function loadWizardState(storage=globalThis.localStorage,preferences={}){const fallback=createWizardState(preferences);try{const parsed=JSON.parse(storage?.getItem(ONBOARDING_WIZARD_KEY));if(!parsed||typeof parsed!=="object")return fallback;return{step:Math.min(Math.max(Number(parsed.step)||0,0),ONBOARDING_STEP_COUNT-1),answers:{...fallback.answers,...(parsed.answers&&typeof parsed.answers==="object"?parsed.answers:{})},consent:parsed.consent===true};}catch{return fallback;}}
+export function saveWizardState(state,storage=globalThis.localStorage){storage?.setItem(ONBOARDING_WIZARD_KEY,JSON.stringify(state));}
+export function clearWizardState(storage=globalThis.localStorage){storage?.removeItem(ONBOARDING_WIZARD_KEY);}
+export function isWizardStepComplete(step,state){const a=state.answers||{};if(step===0)return Boolean(a.occasion&&a.dressCode);if(step===1)return Boolean(a.fit);if(step===2)return Boolean(a.colorComparison);return false;}
+export function wizardPreferences(state,previous={}){return{...previous,goal:state.answers.occasion,style:state.answers.dressCode,fit:state.answers.fit,thermalComfort:state.answers.thermalComfort,colorComparison:state.answers.colorComparison,limits:state.answers.optional};}

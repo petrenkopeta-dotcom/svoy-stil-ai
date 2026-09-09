@@ -1,0 +1,2 @@
+export async function logoutAndClearCloudCache({ auth, cache, objectUrls }) { await auth.logout(); await cache.clear(); objectUrls?.dispose?.(); return { status: "signed_out", cloudCacheCleared: true }; }
+export async function deleteAccountVerified({ adapter, confirmText }) { if (confirmText !== "УДАЛИТЬ") return { status:"confirmation_required" }; const receipt=await adapter.deleteAccount(); if (!receipt?.profileDeleted || !receipt?.objectsDeleted) return { status:"verification_failed",receipt }; return { status:"deleted",receipt }; }

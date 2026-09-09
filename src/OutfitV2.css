@@ -1,0 +1,8 @@
+.outfit-v2-limitation { margin: 14px 0; padding: 12px 14px; border: 1px solid #b9c5b4; background: #edf2e9; color: #455344; font-size: 13px; line-height: 1.5; }
+.outfit-v2-explanation { margin: 18px 0; padding: 18px; border: 1px solid var(--line); background: #f7f4ed; }
+.outfit-v2-explanation h3 { margin: 0 0 12px; font-size: 16px; }
+.outfit-v2-explanation dl { display: grid; gap: 10px; margin: 0; }
+.outfit-v2-explanation dt { font-size: 11px; font-weight: 700; text-transform: uppercase; }
+.outfit-v2-explanation dd { margin: 2px 0 0; line-height: 1.5; }
+.outfit-v2-explanation__limitation { font-size: 11px; color: #656b62; }
+@media (max-width: 520px) { .outfit-v2-explanation { padding: 14px; } }

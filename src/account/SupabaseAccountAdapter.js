@@ -1,0 +1,1 @@
+export function createSupabaseAccountAdapter({authenticatedRequest,endpoint="/functions/v1/delete-account"}={}){if(typeof authenticatedRequest!=="function")return null;return{available:true,async deleteAccount(){return authenticatedRequest({method:"POST",path:endpoint,body:{confirmation:"delete_my_account"},credentials:"provider_managed"});}};}

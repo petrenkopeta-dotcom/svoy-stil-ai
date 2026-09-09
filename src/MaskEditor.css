@@ -1,0 +1,31 @@
+.mask-editor { grid-column: 1 / -1; min-width: 0; max-width: 100%; box-sizing: border-box; border: 1px solid #858c80; background: #f7f4ed; padding: 16px; margin: 12px 0; }
+.mask-editor__heading { display: flex; justify-content: space-between; gap: 16px; }
+.mask-editor__heading h3 { margin: 0; }
+.mask-editor__heading p { font-size: 12px; color: #626861; }
+.mask-editor button, .mask-editor input { min-height: 44px; }
+.mask-editor__toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.mask-editor__toolbar button { border: 1px solid #20231f; background: #fff; padding: 8px 12px; }
+.mask-editor__toolbar button[aria-pressed="true"] { background: #283229; color: #fff; }
+.mask-editor__toolbar label { display: flex; align-items: center; gap: 7px; min-height: 44px; }
+.mask-editor__previews { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.mask-editor figure { margin: 0; min-width: 0; }
+.mask-editor figcaption { font-size: 11px; font-weight: 700; margin-bottom: 6px; }
+.mask-editor figure > div { height: min(48vh, 440px); overflow: auto; background: #353a36; display: grid; place-items: center; }
+.mask-editor canvas { display: block; max-width: none; width: calc(100% * var(--mask-zoom)); height: auto; }
+.mask-editor__edit { position: relative; }
+.mask-editor__edit img, .mask-editor__edit canvas { grid-area: 1 / 1; display: block; max-width: none; width: calc(100% * var(--mask-zoom)); height: auto; }
+.mask-editor__edit canvas { touch-action: none; cursor: crosshair; opacity: .58; }
+.mask-editor__checker { background-color: #eee !important; background-image: linear-gradient(45deg,#bbb 25%,transparent 25%),linear-gradient(-45deg,#bbb 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#bbb 75%),linear-gradient(-45deg,transparent 75%,#bbb 75%) !important; background-size: 24px 24px !important; background-position: 0 0,0 12px,12px -12px,-12px 0 !important; }
+.mask-editor__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.mask-editor__actions button { padding: 9px 16px; }
+@media (max-width: 720px) {
+  .mask-editor { padding: 12px; }
+  .mask-editor__heading { display: block; }
+  .mask-editor__heading > button { width: 100%; }
+  .mask-editor__previews { grid-template-columns: 1fr; }
+  .mask-editor figure > div { height: min(44vh, 360px); }
+  .mask-editor__toolbar > * { flex: 1 1 140px; }
+  .mask-editor__toolbar label { display: grid; grid-template-columns: auto 1fr auto; flex-basis: 100%; }
+  .mask-editor__toolbar input { min-width: 44px; width: 100%; }
+  .mask-editor__actions button { flex: 1; }
+}

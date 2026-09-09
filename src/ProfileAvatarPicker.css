@@ -1,0 +1,6 @@
+.warm-profile-avatar-section p { margin: 0 0 14px; }
+.warm-profile-avatar-grid { display: grid; grid-template-columns: repeat(3, 64px); gap: 10px; }
+.warm-profile-avatar-grid button { width: 64px; height: 64px; padding: 3px; border: 1px solid var(--line); border-radius: 50%; background: transparent; }
+.warm-profile-avatar-grid button.selected { border: 2px solid #687660; box-shadow: 0 0 0 3px #dfe5d9; }
+.warm-profile-avatar-grid button:focus-visible { outline: 3px solid #687660; outline-offset: 3px; }
+.warm-profile-avatar-grid button span { display: block; width: 100%; height: 100%; border-radius: 50%; background-image: url('/assets/avatars-01-09.png'); background-size: 300% 300%; background-repeat: no-repeat; }
