@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>GARMENT-REAL-200-04B · ручная GT-разметка</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>GARMENT-REAL-200-04B</h1>
+      <p>
+        Только ручная локальная разметка. Фото и данные не отправляются в сеть.
+      </p>
+    </header>
+    <main>
+      <section class="setup">
+        <h2>1. Локальные входы</h2>
+        <label
+          >Manifest JSON
+          <input id="manifest" type="file" accept="application/json"
+        /></label>
+        <label
+          >Папка изображений
+          <input
+            id="images"
+            type="file"
+            accept="image/*"
+            webkitdirectory
+            multiple
+        /></label>
+        <label
+          >Owner manifest (отдельный срез)
+          <input id="ownerManifest" type="file" accept="application/json"
+        /></label>
+        <label
+          >Owner images
+          <input
+            id="ownerImages"
+            type="file"
+            accept="image/*"
+            webkitdirectory
+            multiple
+        /></label>
+        <label
+          >Allowlist JSON
+          <input id="allowlist" type="file" accept="application/json"
+        /></label>
+        <label
+          >Quarantine JSON
+          <input id="quarantine" type="file" accept="application/json"
+        /></label>
+        <label
+          >Продолжить annotations JSON
+          <input id="annotations" type="file" accept="application/json"
+        /></label>
+        <label
+          >ID разметчика <input id="annotator" autocomplete="off" required
+        /></label>
+        <details>
+          <summary>Независимый второй проход / adjudication</summary>
+          <p>
+            Заполняется только реальным независимым разметчиком B или
+            adjudicator. Не копируйте значения прохода A.
+          </p>
+          <label
+            >ID разметчика B <input id="annotatorB" autocomplete="off"
+          /></label>
+          <label
+            >ID adjudicator <input id="adjudicator" autocomplete="off"
+          /></label>
+          <label
+            >Mask IoU A↔B
+            <input id="maskIou" type="number" min="0" max="1" step="0.001"
+          /></label>
+          <label
+            >Boundary F-score A↔B
+            <input
+              id="boundaryFscore"
+              type="number"
+              min="0"
+              max="1"
+              step="0.001"
+          /></label>
+        </details>
+        <button id="start" type="button">Открыть очередь</button>
+      </section>
+      <section id="workspace" hidden>
+        <div class="toolbar">
+          <button id="prev" type="button">←</button
+          ><strong id="position"></strong
+          ><button id="next" type="button">→</button
+          ><button id="export" type="button">Экспорт JSON</button
+          ><button id="coverage" type="button">Coverage JSON</button>
+        </div>
+        <div class="grid">
+          <div>
+            <canvas
+              id="canvas"
+              width="900"
+              height="700"
+              aria-label="Фото и ручная геометрия"
+            ></canvas>
+            <p>
+              Режим bbox: протяните прямоугольник. Режим границы: кликайте точки
+              по контуру.
+            </p>
+          </div>
+          <form id="form">
+            <p id="itemMeta"></p>
+            <label
+              >Категория
+              <select id="category"></select
+            ></label>
+            <label
+              >Категория на русском <input id="categoryRu" required
+            /></label>
+            <label
+              >Основной цвет
+              <select id="color"></select
+            ></label>
+            <label
+              >Дополнительные цвета
+              <select id="additionalColors" multiple size="5"></select
+            ></label>
+            <label>Принт <input id="patternRu" required /></label>
+            <label>Фактура <input id="textureRu" required /></label>
+            <label>Окантовка/отделка <input id="trimRu" required /></label>
+            <label
+              >Видимость краёв
+              <select id="edgeVisibility">
+                <option value="full">Полная</option>
+                <option value="partial">Частичная</option>
+                <option value="uncertain">Неуверенная</option>
+              </select></label
+            >
+            <label
+              >Риск совпадения с фоном
+              <select id="backgroundRisk">
+                <option value="low">Низкий</option>
+                <option value="medium">Средний</option>
+                <option value="high">Высокий</option>
+              </select></label
+            >
+            <fieldset>
+              <legend>Suitability</legend>
+              <label
+                ><input type="radio" name="suitability" value="allowlist" />
+                allowlist</label
+              ><label
+                ><input type="radio" name="suitability" value="quarantine" />
+                quarantine</label
+              ><label
+                ><input type="radio" name="suitability" value="reject" />
+                reject</label
+              >
+            </fieldset>
+            <label
+              >Причины quarantine
+              <select id="reasons" multiple size="6"></select
+            ></label>
+            <fieldset>
+              <legend>Геометрия</legend>
+              <button id="bboxMode" type="button">Нарисовать bbox</button
+              ><button id="boundaryMode" type="button">
+                Нарисовать границу</button
+              ><button id="clearGeometry" type="button">Очистить</button>
+            </fieldset>
+            <label
+              >Локальный файл маски, если есть
+              <input id="mask" type="file" accept="image/png"
+            /></label>
+            <label>Заметки <textarea id="notes"></textarea></label>
+            <button type="submit">Сохранить ручную разметку</button>
+            <output id="validation" aria-live="polite"></output>
+          </form>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
