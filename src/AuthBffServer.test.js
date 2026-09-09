@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   createAuthBff,
   createFixedWindowRateLimiter,
+  createMemorySessionStore,
   providerCommandAllowed,
+  startAuthBff,
   validateAuthBffConfig,
 } from "../server/authBff.mjs";
 const origin = "https://stylist.example";
@@ -338,6 +340,91 @@ test("BFF bounds in-memory sessions and evicts the oldest", async () => {
   );
   assert.equal(sessions.has("old"), false);
   assert.equal(sessions.has("new"), true);
+});
+
+test("BFF uses the asynchronous session store contract for restore and revoke", async () => {
+  const records = new Map();
+  const calls = [];
+  const sessionStore = {
+    durable: true,
+    async get(id) {
+      calls.push(["get", id]);
+      return records.get(id) || null;
+    },
+    async put(id, session) {
+      calls.push(["put", id]);
+      records.set(id, session);
+    },
+    async delete(id) {
+      calls.push(["delete", id]);
+      records.delete(id);
+    },
+  };
+  const handle = createAuthBff({
+    provider: providerStub(),
+    allowedOrigins: [origin],
+    sessionStore,
+    now: () => 1_000_000,
+    newSessionId: () => "durable-session",
+  });
+  const verified = await handle(
+    new Request(`${origin}/api/auth/verify`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ email: "person@example.test", code: "123456" }),
+    }),
+  );
+  assert.equal(verified.status, 200);
+  assert.equal(records.has("durable-session"), true);
+  const cookieHeaders = {
+    ...headers,
+    Cookie: "ai_stylist_session=durable-session",
+  };
+  assert.equal(
+    (
+      await handle(
+        new Request(`${origin}/api/auth/session`, { headers: cookieHeaders }),
+      )
+    ).status,
+    200,
+  );
+  assert.equal(
+    (
+      await handle(
+        new Request(`${origin}/api/auth/logout`, {
+          method: "POST",
+          headers: cookieHeaders,
+          body: "{}",
+        }),
+      )
+    ).status,
+    200,
+  );
+  assert.equal(records.has("durable-session"), false);
+  assert.deepEqual(
+    calls.map(([operation]) => operation),
+    ["put", "get", "get", "delete"],
+  );
+});
+
+test("production startup rejects the non-durable memory session store", () => {
+  const options = {
+    port: 8787,
+    siteOrigin: "https://stylist.example",
+    secureCookies: true,
+    production: true,
+    supabaseUrl: "https://project.supabase.co",
+    publishableKey: "publishable-test-key",
+  };
+  assert.throws(() => startAuthBff(options), /durable sessionStore/);
+  assert.throws(
+    () =>
+      startAuthBff({
+        ...options,
+        sessionStore: createMemorySessionStore(),
+      }),
+    /durable sessionStore/,
+  );
 });
 
 test("provider proxy rejects unknown query controls and oversized limits", () => {
