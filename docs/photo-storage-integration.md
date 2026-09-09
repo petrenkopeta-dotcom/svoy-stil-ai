@@ -15,3 +15,9 @@
 Загрузить wardrobe и вызвать `prepareLegacyPhotoMigration(items, photoStorage, consent)`. Она не меняет исходный массив, сначала копирует data URL в photo store и возвращает `items` со ссылками `{ photoId }`, `backup` и `rollback()`. Сохранить новые items через wardrobe repository. Если запись бросила ошибку или `meta.persisted !== true`, вызвать `await migration.rollback()` и оставить прежний JSON. Удалять резервную копию допустимо только после подтверждённой долговечной записи нового envelope. Без отдельного photo-consent миграцию не запускать.
 
 TTL по умолчанию — 30 дней, максимум — 365 дней. Это локальное хранение, не AI-анализ и не upload.
+
+## Cloud photo transport через BFF
+
+При отдельном согласии cloud repository передаёт уже нормализованный Blob в `SupabaseDataPort`. В BFF-режиме браузер отправляет его только на same-origin `/api/provider/storage/v1/object/wardrobe-photos/{userId}/{entityId}/{idempotencyKey}` с credentialed cookie и CSRF intent. BFF проверяет активную сессию, совпадение `userId` с владельцем сессии, ровно три path-сегмента, MIME и сигнатуру JPEG/PNG/WebP, `x-upsert: true` и лимит Supabase bucket 10 MiB. Произвольные bucket/path/query/content type запрещены.
+
+Provider access token остаётся на сервере. BFF пересылает байты в private Supabase bucket и возвращает браузеру только пустой `201` с `ETag`; тело provider-ответа и credentials наружу не передаются. Live cloud upload остаётся HOLD до owner-controlled RLS/storage проверки двух пользователей.

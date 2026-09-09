@@ -4,7 +4,9 @@ import {
   createAuthBff,
   createFixedWindowRateLimiter,
   createMemorySessionStore,
+  createSupabaseServerProvider,
   providerCommandAllowed,
+  providerPhotoPathAllowed,
   startAuthBff,
   validateAuthBffConfig,
 } from "../server/authBff.mjs";
@@ -141,6 +143,169 @@ test("provider proxy accepts only explicit application resources", () => {
       providerCommandAllowed(`/api/provider${command.path}`, command),
       false,
     );
+});
+
+test("photo proxy accepts only the authenticated owner path", () => {
+  assert.equal(
+    providerPhotoPathAllowed(
+      "/api/provider/storage/v1/object/wardrobe-photos/u1/item-1/idem-1",
+      "u1",
+    ),
+    true,
+  );
+  for (const path of [
+    "/api/provider/storage/v1/object/wardrobe-photos/u2/item-1/idem-1",
+    "/api/provider/storage/v1/object/wardrobe-photos/u1/item-1",
+    "/api/provider/storage/v1/object/wardrobe-photos/u1/%2Fetc/idem-1",
+    "/api/provider/storage/v1/object/other/u1/item-1/idem-1",
+  ])
+    assert.equal(providerPhotoPathAllowed(path, "u1"), false);
+});
+
+test("BFF streams an allowlisted photo upload and returns only its receipt", async () => {
+  const uploads = [];
+  const handle = createAuthBff({
+    provider: providerStub({
+      uploadPhoto: async (session, upload) => {
+        uploads.push({ session, upload });
+        return { etag: '"photo-etag"' };
+      },
+    }),
+    allowedOrigins: [origin],
+    sessions: new Map([
+      [
+        "photo-session",
+        {
+          userId: "u1",
+          email: "person@example.test",
+          accessToken: "access",
+          expiresAt: 2000,
+        },
+      ],
+    ]),
+    now: () => 1_000_000,
+  });
+  const response = await handle(
+    new Request(
+      `${origin}/api/provider/storage/v1/object/wardrobe-photos/u1/item-1/idem-1`,
+      {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          "X-CSRF-Intent": "ai-stylist",
+          "Content-Type": "image/jpeg",
+          "x-upsert": "true",
+          Cookie: "ai_stylist_session=photo-session",
+        },
+        body: new Uint8Array([0xff, 0xd8, 0xff]),
+      },
+    ),
+  );
+  assert.equal(response.status, 201);
+  assert.equal(response.headers.get("etag"), '"photo-etag"');
+  assert.equal(await response.text(), "");
+  assert.equal(uploads.length, 1);
+  assert.equal(uploads[0].upload.contentType, "image/jpeg");
+  assert.equal(uploads[0].upload.body.byteLength, 3);
+});
+
+test("photo proxy rejects cross-owner paths and non-image bodies before provider egress", async () => {
+  let uploads = 0;
+  const handle = createAuthBff({
+    provider: providerStub({
+      uploadPhoto: async () => {
+        uploads += 1;
+        return { etag: "unexpected" };
+      },
+    }),
+    allowedOrigins: [origin],
+    sessions: new Map([
+      [
+        "photo-session",
+        {
+          userId: "u1",
+          email: "person@example.test",
+          accessToken: "access",
+          expiresAt: 2000,
+        },
+      ],
+    ]),
+    now: () => 1_000_000,
+  });
+  const upload = (path, contentType = "image/jpeg") =>
+    handle(
+      new Request(`${origin}${path}`, {
+        method: "POST",
+        headers: {
+          Origin: origin,
+          "X-CSRF-Intent": "ai-stylist",
+          "Content-Type": contentType,
+          "x-upsert": "true",
+          Cookie: "ai_stylist_session=photo-session",
+        },
+        body: new Uint8Array([1]),
+      }),
+    );
+  assert.equal(
+    (
+      await upload(
+        "/api/provider/storage/v1/object/wardrobe-photos/u2/item/idem",
+      )
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await upload(
+        "/api/provider/storage/v1/object/wardrobe-photos/u1/item/idem",
+        "application/octet-stream",
+      )
+    ).status,
+    415,
+  );
+  assert.equal(
+    (
+      await upload(
+        "/api/provider/storage/v1/object/wardrobe-photos/u1/item/idem",
+      )
+    ).status,
+    415,
+  );
+  assert.equal(uploads, 0);
+});
+
+test("Supabase photo provider keeps the bearer token server-side and requires an ETag", async () => {
+  const calls = [];
+  const provider = createSupabaseServerProvider({
+    url: "https://project.supabase.co",
+    publishableKey: "publishable-test-key",
+    fetchFn: async (...args) => {
+      calls.push(args);
+      return new Response(null, {
+        status: 200,
+        headers: { ETag: '"stored-etag"' },
+      });
+    },
+  });
+  const bytes = new Uint8Array([0xff, 0xd8, 0xff]).buffer;
+  assert.deepEqual(
+    await provider.uploadPhoto(
+      { accessToken: "server-access-token" },
+      {
+        path: "/storage/v1/object/wardrobe-photos/u1/item/idem",
+        body: bytes,
+        contentType: "image/jpeg",
+      },
+    ),
+    { etag: '"stored-etag"' },
+  );
+  assert.equal(
+    calls[0][0],
+    "https://project.supabase.co/storage/v1/object/wardrobe-photos/u1/item/idem",
+  );
+  assert.equal(calls[0][1].headers.Authorization, "Bearer server-access-token");
+  assert.equal(calls[0][1].headers["x-upsert"], "true");
+  assert.equal(calls[0][1].body, bytes);
 });
 
 const providerStub = (overrides = {}) => ({

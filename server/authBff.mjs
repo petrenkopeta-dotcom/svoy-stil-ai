@@ -10,6 +10,8 @@ const SECURITY_HEADERS = {
 };
 const SESSION_COOKIE = "ai_stylist_session";
 const MAX_BODY_BYTES = 16_384;
+const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
+const PHOTO_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_SESSION_SECONDS = 7 * 24 * 60 * 60;
 const PROVIDER_TABLES = new Set([
   "profiles",
@@ -172,6 +174,29 @@ const validSessionStore = (store) =>
   typeof store.put === "function" &&
   typeof store.delete === "function";
 
+const photoSignatureMatches = (body, contentType) => {
+  const bytes = new Uint8Array(body);
+  if (contentType === "image/jpeg")
+    return (
+      bytes.length >= 3 &&
+      bytes[0] === 0xff &&
+      bytes[1] === 0xd8 &&
+      bytes[2] === 0xff
+    );
+  if (contentType === "image/png")
+    return (
+      bytes.length >= 8 &&
+      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every(
+        (value, index) => bytes[index] === value,
+      )
+    );
+  return (
+    bytes.length >= 12 &&
+    String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+    String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
+  );
+};
+
 function validProviderQuery(requestPath) {
   const url = new URL(requestPath, "https://provider.invalid");
   const keys = [...url.searchParams.keys()];
@@ -221,6 +246,29 @@ export function providerCommandAllowed(routePath, command) {
   );
 }
 
+export function providerPhotoPathAllowed(pathname, userId) {
+  const prefix = "/api/provider/storage/v1/object/wardrobe-photos/";
+  if (!pathname.startsWith(prefix) || pathname.includes("\\")) return false;
+  const encodedParts = pathname.slice(prefix.length).split("/");
+  if (encodedParts.length !== 3 || encodedParts.some((part) => !part))
+    return false;
+  try {
+    const parts = encodedParts.map(decodeURIComponent);
+    return (
+      parts[0] === userId &&
+      parts.every(
+        (part) =>
+          part.length <= 128 &&
+          !part.includes("/") &&
+          !part.includes("\\") &&
+          !/[\u0000-\u001f\u007f]/.test(part),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function createAuthBff({
   provider,
   allowedOrigins,
@@ -264,6 +312,30 @@ export function createAuthBff({
     } catch {
       throw fail("invalid_json", 400, "invalid_request");
     }
+  };
+  const readPhoto = async (request) => {
+    const contentType = request.headers
+      .get("content-type")
+      ?.split(";", 1)[0]
+      .trim()
+      .toLowerCase();
+    if (!PHOTO_MIMES.has(contentType))
+      throw fail("unsupported_photo_type", 415, "photo_type_required");
+    if (request.headers.get("x-upsert") !== "true")
+      throw fail("invalid_upload_intent", 400, "invalid_request");
+    const declaredLength = Number(request.headers.get("content-length"));
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_PHOTO_BYTES)
+      throw fail("too_large", 413, "request_too_large");
+    const body = await request.arrayBuffer();
+    if (!body.byteLength || body.byteLength > MAX_PHOTO_BYTES)
+      throw fail(
+        "invalid_photo_size",
+        body.byteLength ? 413 : 400,
+        body.byteLength ? "request_too_large" : "invalid_request",
+      );
+    if (!photoSignatureMatches(body, contentType))
+      throw fail("photo_signature_mismatch", 415, "photo_type_required");
+    return { body, contentType };
   };
   const activeSession = async (request) => {
     const id = cookieValue(request, SESSION_COOKIE);
@@ -350,6 +422,24 @@ export function createAuthBff({
       ) {
         const active = await activeSession(request);
         if (!active) return json(401, { code: "session_expired" });
+        if (url.pathname.startsWith("/api/provider/storage/")) {
+          if (
+            url.search ||
+            !providerPhotoPathAllowed(url.pathname, active.session.userId) ||
+            typeof provider.uploadPhoto !== "function"
+          )
+            return json(403, { code: "provider_command_rejected" });
+          const photo = await readPhoto(request);
+          const receipt = await provider.uploadPhoto(active.session, {
+            path: url.pathname.slice("/api/provider".length),
+            ...photo,
+          });
+          if (!receipt?.etag) throw new Error("object_receipt_missing");
+          return new Response(null, {
+            status: 201,
+            headers: { ...SECURITY_HEADERS, ETag: receipt.etag },
+          });
+        }
         const command = await readBody(request);
         if (!providerCommandAllowed(`${url.pathname}${url.search}`, command))
           return json(403, { code: "provider_command_rejected" });
@@ -483,6 +573,21 @@ export function createSupabaseServerProvider({
       if (!response.ok) throw new Error("provider_error");
       return payload;
     },
+    async uploadPhoto(session, { path, body, contentType }) {
+      const response = await fetchFn(`${base}${path}`, {
+        method: "POST",
+        headers: {
+          apikey: publishableKey,
+          Authorization: `Bearer ${session.accessToken}`,
+          "Content-Type": contentType,
+          "x-upsert": "true",
+        },
+        body,
+      });
+      const etag = response.headers.get("etag");
+      if (!response.ok || !etag) throw new Error("object_receipt_missing");
+      return { etag };
+    },
   };
 }
 
@@ -516,8 +621,13 @@ export function startAuthBff({
     sessionStore,
   });
   const server = createServer(async (request, response) => {
+    const requestLimit = request.url?.startsWith(
+      "/api/provider/storage/v1/object/wardrobe-photos/",
+    )
+      ? MAX_PHOTO_BYTES
+      : MAX_BODY_BYTES;
     const declaredLength = Number(request.headers["content-length"]);
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+    if (Number.isFinite(declaredLength) && declaredLength > requestLimit) {
       request.resume();
       const result = json(413, { code: "request_too_large" });
       response.writeHead(result.status, Object.fromEntries(result.headers));
@@ -528,9 +638,9 @@ export function startAuthBff({
     let receivedBytes = 0;
     for await (const chunk of request) {
       receivedBytes += chunk.length;
-      if (receivedBytes <= MAX_BODY_BYTES) chunks.push(chunk);
+      if (receivedBytes <= requestLimit) chunks.push(chunk);
     }
-    if (receivedBytes > MAX_BODY_BYTES) {
+    if (receivedBytes > requestLimit) {
       const result = json(413, { code: "request_too_large" });
       response.writeHead(result.status, Object.fromEntries(result.headers));
       response.end(Buffer.from(await result.arrayBuffer()));
