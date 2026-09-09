@@ -25,6 +25,8 @@ pnpm-debug.log*
 .turbo/
 .eslintcache
 coverage/
+playwright-report/
+test-results/
 *.tsbuildinfo
 /.cv-auto-runtime/
 

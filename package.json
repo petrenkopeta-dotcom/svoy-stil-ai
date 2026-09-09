@@ -13,13 +13,14 @@
     "dev": "vite",
     "build": "vite build",
     "test": "node --test src/*.test.js server/*.test.js",
+    "test:browser": "playwright test",
     "auth:bff": "node server/authBff.mjs",
     "auth:diagnose": "node scripts/auth-config-diagnostics.mjs",
     "preview": "vite preview",
     "repo:check": "node scripts/check-repository-boundary.mjs",
     "bundle:check": "node scripts/check-bundle-budget.mjs",
     "verify": "npm run repo:check && npm run format:check && npm test && npm run build && npm run bundle:check",
-    "format:check": "prettier --check package.json vite.config.js server/authBff.mjs src/AuthBffServer.test.js src/bootstrap.jsx src/BootstrapBoundary.test.js scripts/check-bundle-budget.mjs .github/**/*.yml"
+    "format:check": "prettier --check package.json vite.config.js playwright.config.js server/authBff.mjs src/AuthBffServer.test.js src/bootstrap.jsx src/BootstrapBoundary.test.js scripts/check-bundle-budget.mjs e2e .github/**/*.yml"
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.0.4",
@@ -29,6 +30,7 @@
     "vite": "8.1.5"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "prettier": "^3.9.6"
   }
 }
