@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-stylist.local/schemas/clothing-item-analysis.schema.json",
+  "title": "ClothingItemAnalysis",
+  "description": "Strict AI analysis contract. User-confirmed values are stored separately from this suggestion.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "category", "subcategory", "colors", "style_tags", "seasons", "formality", "warmth", "material", "pattern", "silhouette", "length", "occasions", "quality", "confidence", "warnings"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "category": {
+      "type": "string",
+      "enum": ["top", "bottom", "dress", "outerwear", "shoes", "accessory", "one_piece", "unknown"]
+    },
+    "subcategory": { "type": "string", "minLength": 1, "maxLength": 80 },
+    "display_name": { "type": ["string", "null"], "maxLength": 120 },
+    "colors": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "hex", "share"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "hex": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+          "share": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+    "style_tags": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 7,
+      "items": { "type": "string", "enum": ["smart_casual", "casual", "feminine", "minimal", "old_money", "sporty", "romantic", "business", "evening", "streetwear", "classic", "unknown"] }
+    },
+    "seasons": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 1,
+      "items": { "type": "string", "enum": ["spring", "summer", "autumn", "winter", "all_season"] }
+    },
+    "formality": { "type": "integer", "minimum": 1, "maximum": 5, "description": "1 casual; 5 formal." },
+    "warmth": { "type": "integer", "minimum": 1, "maximum": 5, "description": "1 very light; 5 very warm." },
+    "material": { "type": "string", "enum": ["cotton", "linen", "wool", "cashmere", "silk", "denim", "leather", "suede", "knit", "synthetic", "mixed", "unknown"] },
+    "pattern": { "type": "string", "enum": ["solid", "stripe", "check", "floral", "animal", "geometric", "logo", "abstract", "other", "unknown"] },
+    "silhouette": { "type": "string", "enum": ["fitted", "straight", "relaxed", "oversized", "a_line", "bodycon", "wide", "tapered", "other", "unknown"] },
+    "length": { "type": "string", "enum": ["cropped", "mini", "short", "regular", "midi", "maxi", "ankle", "full", "not_applicable", "unknown"] },
+    "occasions": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 8,
+      "items": { "type": "string", "enum": ["work", "meeting", "walk", "date", "study", "event", "travel", "sport", "home", "evening"] }
+    },
+    "quality": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["single_item", "fully_visible", "blur", "lighting", "occlusion", "suitable_for_processing"],
+      "properties": {
+        "single_item": { "type": "boolean" },
+        "fully_visible": { "type": "boolean" },
+        "blur": { "type": "string", "enum": ["none", "low", "medium", "high"] },
+        "lighting": { "type": "string", "enum": ["good", "acceptable", "poor"] },
+        "occlusion": { "type": "string", "enum": ["none", "low", "medium", "high"] },
+        "suitable_for_processing": { "type": "boolean" }
+      }
+    },
+    "confidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "subcategory", "colors", "style_tags", "seasons", "formality", "warmth", "material", "pattern", "silhouette", "length", "occasions"],
+      "properties": {
+        "category": { "$ref": "#/$defs/probability" },
+        "subcategory": { "$ref": "#/$defs/probability" },
+        "colors": { "$ref": "#/$defs/probability" },
+        "style_tags": { "$ref": "#/$defs/probability" },
+        "seasons": { "$ref": "#/$defs/probability" },
+        "formality": { "$ref": "#/$defs/probability" },
+        "warmth": { "$ref": "#/$defs/probability" },
+        "material": { "$ref": "#/$defs/probability" },
+        "pattern": { "$ref": "#/$defs/probability" },
+        "silhouette": { "$ref": "#/$defs/probability" },
+        "length": { "$ref": "#/$defs/probability" },
+        "occasions": { "$ref": "#/$defs/probability" }
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "type": "string", "maxLength": 240 }
+    }
+  },
+  "$defs": {
+    "probability": { "type": "number", "minimum": 0, "maximum": 1 }
+  }
+}

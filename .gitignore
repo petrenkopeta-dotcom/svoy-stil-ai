@@ -1,0 +1,72 @@
+# Dependencies
+/node_modules/
+
+# Build output
+/dist/
+
+# Environment and local secrets
+.env
+.env.*
+!.env.example
+
+# Logs and diagnostics
+*.log
+*.log.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.dmp
+
+# Tool and test caches
+.cache/
+.vite/
+.parcel-cache/
+.turbo/
+.eslintcache
+coverage/
+*.tsbuildinfo
+/.cv-auto-runtime/
+
+# Browser profiles and browser-owned data
+**/edge-profile/
+**/browser-profile/
+**/browser-profiles/
+**/playwright-profile/
+**/user-data-dir/
+**/Crashpad/
+**/Cache/
+**/Code Cache/
+**/GPUCache/
+
+# Local/generated previews
+/outputs/
+**/notion-previews/
+**/notion-previews-small/
+**/notion-previews-tiny/
+
+# Migration boundary: generated QA evidence and non-reviewed datasets
+/qa-evidence/
+/GARMENT-REAL-*/
+/eval-data/
+/qa/
+/prototypes/
+/test/browser/
+/scripts/*
+!/scripts/auth-config-diagnostics.mjs
+!/scripts/check-repository-boundary.mjs
+
+# Temporary files and scripts
+/tmp_*.py
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+# OS/editor metadata
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/

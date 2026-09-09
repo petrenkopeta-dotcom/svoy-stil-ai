@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ai-stylist.local/schemas/stylist-reasoning-v1.schema.json",
+  "title": "Stylist Reasoning v1 entities",
+  "description": "Discriminated union. Runtime normalization and backward-compatibility adapter live in src/stylistReasoningSchemas.js.",
+  "oneOf": [
+    { "$ref": "#/$defs/StylistRequest" },
+    { "$ref": "#/$defs/GarmentStyleFeatures" },
+    { "$ref": "#/$defs/CandidateOutfit" },
+    { "$ref": "#/$defs/ReasoningFact" },
+    { "$ref": "#/$defs/ScoredRecommendation" },
+    { "$ref": "#/$defs/AlternativeAction" }
+  ],
+  "$defs": {
+    "base": { "type": "object", "required": ["schema_version", "kind"], "properties": { "schema_version": { "const": "1.0" }, "kind": { "type": "string" } } },
+    "id": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "seasons": { "type": "array", "uniqueItems": true, "items": { "enum": ["spring", "summer", "autumn", "winter", "all_season"] } },
+    "StylistRequest": { "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "required": ["request_id", "garment_ids", "constraints"], "properties": { "kind": { "const": "StylistRequest" }, "request_id": { "$ref": "#/$defs/id" }, "garment_ids": { "type": "array", "items": { "$ref": "#/$defs/id" } }, "constraints": { "type": "array", "items": { "type": "string" } }, "seasons": { "$ref": "#/$defs/seasons" } } }] },
+    "GarmentStyleFeatures": { "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "required": ["garment_id", "revision", "category", "colors", "lightness", "saturation", "temperature", "pattern", "texture", "fit", "volume", "length", "formality", "seasons", "warmth", "accent"], "properties": { "kind": { "const": "GarmentStyleFeatures" }, "garment_id": { "$ref": "#/$defs/id" }, "revision": { "type": "integer", "minimum": 1 }, "category": { "enum": ["top", "bottom", "dress", "outerwear", "shoes", "accessory", "one_piece", "unknown"] }, "colors": { "type": "array", "maxItems": 5, "items": { "type": "object", "required": ["name", "hex", "share", "role"], "properties": { "name": { "type": "string" }, "hex": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }, "share": { "type": "number", "minimum": 0, "maximum": 1 }, "role": { "enum": ["dominant", "supporting", "accent"] } } } }, "lightness": { "type": "number", "minimum": 0, "maximum": 1 }, "saturation": { "type": "number", "minimum": 0, "maximum": 1 }, "temperature": { "enum": ["cool", "neutral", "warm", "unknown"] }, "pattern": { "type": "string" }, "texture": { "type": "string" }, "fit": { "type": "string" }, "volume": { "type": "string" }, "length": { "type": "string" }, "formality": { "type": "integer", "minimum": 1, "maximum": 5 }, "seasons": { "$ref": "#/$defs/seasons" }, "warmth": { "type": "integer", "minimum": 1, "maximum": 5 }, "accent": { "type": "integer", "minimum": 1, "maximum": 5 } } }] },
+    "CandidateOutfit": { "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "required": ["candidate_id", "request_id", "garment_ids", "generator_version"], "properties": { "kind": { "const": "CandidateOutfit" }, "candidate_id": { "$ref": "#/$defs/id" }, "request_id": { "$ref": "#/$defs/id" }, "garment_ids": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/id" } }, "generator_version": { "type": "string" } } }] },
+    "ReasoningFact": { "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "required": ["fact_id", "rule_id", "rule_version", "outcome", "weight", "message_key", "evidence"], "properties": { "kind": { "const": "ReasoningFact" }, "fact_id": { "$ref": "#/$defs/id" }, "rule_id": { "type": "string" }, "rule_version": { "type": "string" }, "outcome": { "enum": ["pass", "fail", "neutral"] }, "weight": { "type": "number", "minimum": -1, "maximum": 1 }, "message_key": { "type": "string" }, "evidence": { "type": "array", "items": { "type": "string" } } } }] },
+    "AlternativeAction": { "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "required": ["action_id", "type", "reason_fact_ids"], "properties": { "kind": { "const": "AlternativeAction" }, "action_id": { "$ref": "#/$defs/id" }, "type": { "enum": ["replace", "remove", "add", "adjust_request"] }, "reason_fact_ids": { "type": "array", "items": { "$ref": "#/$defs/id" } } } }] },
+    "ScoredRecommendation": { "allOf": [{ "$ref": "#/$defs/base" }, { "type": "object", "required": ["recommendation_id", "candidate", "score", "level", "facts", "alternatives", "ruleset_version"], "properties": { "kind": { "const": "ScoredRecommendation" }, "recommendation_id": { "$ref": "#/$defs/id" }, "candidate": { "$ref": "#/$defs/CandidateOutfit" }, "score": { "type": "number", "minimum": 0, "maximum": 100 }, "level": { "enum": ["excellent", "good", "needs_change"] }, "facts": { "type": "array", "items": { "$ref": "#/$defs/ReasoningFact" } }, "alternatives": { "type": "array", "items": { "$ref": "#/$defs/AlternativeAction" } }, "ruleset_version": { "type": "string" } } }] }
+  }
+}
+
