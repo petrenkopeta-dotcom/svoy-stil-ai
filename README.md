@@ -22,6 +22,7 @@ npm run dev
 npm run repo:check
 npm test
 npm run build
+npm run bundle:check
 ```
 
 Исторические browser harnesses не входят в первый переносимый baseline: они зависели от локальных путей и evidence. Переносимые QA-модули и синтетические SVG-fixtures без персональных данных сохранены, поскольку их использует основной test gate. Новый browser gate должен быть добавлен отдельной задачей с явной Playwright-зависимостью.
@@ -33,7 +34,9 @@ npm run build
 - Node BFF и Supabase adapters находятся в незавершённом production-контуре;
 - локальный CV middleware разрешён только для loopback/dev сценариев.
 
-Целевая архитектура из `docs/architecture.md` не является описанием развернутого production-сервиса. До её разделения на AS-IS и TARGET этот документ следует читать как проектный контракт.
+Подтверждённая реализация описана в `docs/ARCHITECTURE-AS-IS.md`, минимальная production-цель — в `docs/ARCHITECTURE-TARGET.md`. Расширенный `docs/architecture.md` остаётся проектным контрактом, а не заявлением о развёрнутых компонентах.
+
+Deployment и release gates: `docs/DEPLOYMENT-RUNBOOK.md` и `docs/RELEASE-CHECKLIST.md`.
 
 ## Данные и публикация
 

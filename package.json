@@ -1,5 +1,14 @@
 {
+  "name": "svoy-stil-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Privacy-first local pilot of an AI wardrobe stylist",
   "type": "module",
+  "engines": {
+    "node": ">=22 <25",
+    "npm": ">=10"
+  },
+  "packageManager": "npm@10.9.2",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -8,7 +17,9 @@
     "auth:diagnose": "node scripts/auth-config-diagnostics.mjs",
     "preview": "vite preview",
     "repo:check": "node scripts/check-repository-boundary.mjs",
-    "format:check": "prettier --check package.json vite.config.js src server"
+    "bundle:check": "node scripts/check-bundle-budget.mjs",
+    "verify": "npm run repo:check && npm run format:check && npm test && npm run build && npm run bundle:check",
+    "format:check": "prettier --check package.json vite.config.js server/authBff.mjs src/AuthBffServer.test.js scripts/check-bundle-budget.mjs .github/**/*.yml"
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.0.4",

@@ -248,6 +248,8 @@ export function createAuthBff({
     if (request.method === "POST" && !requireIntent(request))
       return json(403, { code: "request_rejected" });
     try {
+      if (url.pathname === "/api/health" && request.method === "GET")
+        return json(200, { status: "ok" });
       if (url.pathname === "/api/auth/otp" && request.method === "POST") {
         const body = await readBody(request);
         if (!ownKeysAre(body, new Set(["email"])))
@@ -320,6 +322,21 @@ export function createAuthBff({
           await provider.authenticatedRequest(active.session, command),
         );
       }
+      const allowedMethod =
+        new Map([
+          ["/api/health", "GET"],
+          ["/api/auth/otp", "POST"],
+          ["/api/auth/verify", "POST"],
+          ["/api/auth/session", "GET"],
+          ["/api/auth/logout", "POST"],
+        ]).get(url.pathname) ||
+        (url.pathname.startsWith("/api/provider/") ? "POST" : null);
+      if (allowedMethod)
+        return json(
+          405,
+          { code: "method_not_allowed" },
+          { Allow: allowedMethod },
+        );
       return json(404, { code: "not_found" });
     } catch (error) {
       const status = Number.isInteger(error?.status)
@@ -334,6 +351,40 @@ export function createAuthBff({
       });
     }
   };
+}
+
+export function validateAuthBffConfig({
+  port,
+  siteOrigin,
+  secureCookies,
+  production = process.env.NODE_ENV === "production",
+}) {
+  if (!Number.isInteger(port) || port < 1 || port > 65_535)
+    throw new Error("AUTH_PORT must be an integer between 1 and 65535");
+  let parsedOrigin;
+  try {
+    parsedOrigin = new URL(siteOrigin);
+  } catch {
+    throw new Error("AUTH_SITE_ORIGIN must be an absolute origin");
+  }
+  const loopback = new Set(["localhost", "127.0.0.1", "[::1]"]).has(
+    parsedOrigin.hostname,
+  );
+  if (
+    parsedOrigin.origin !== siteOrigin ||
+    (parsedOrigin.protocol !== "https:" &&
+      !(loopback && parsedOrigin.protocol === "http:"))
+  )
+    throw new Error(
+      "AUTH_SITE_ORIGIN must be an HTTPS origin or HTTP loopback origin",
+    );
+  if (production && !secureCookies)
+    throw new Error("insecure cookies are forbidden in production");
+  return Object.freeze({
+    port,
+    siteOrigin: parsedOrigin.origin,
+    secureCookies,
+  });
 }
 
 export function createSupabaseServerProvider({
@@ -400,39 +451,56 @@ export function createSupabaseServerProvider({
 }
 
 export function startAuthBff({
-  port = 8787,
+  port = Number(process.env.AUTH_PORT || 8787),
   siteOrigin = process.env.AUTH_SITE_ORIGIN,
   supabaseUrl = process.env.SUPABASE_URL,
   publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY,
   secureCookies = process.env.AUTH_INSECURE_LOCAL_COOKIE !== "1",
 } = {}) {
-  if (!siteOrigin) throw new Error("AUTH_SITE_ORIGIN is required");
-  if (process.env.NODE_ENV === "production" && !secureCookies)
-    throw new Error("insecure cookies are forbidden in production");
+  const config = validateAuthBffConfig({ port, siteOrigin, secureCookies });
   const handler = createAuthBff({
     provider: createSupabaseServerProvider({
       url: supabaseUrl,
       publishableKey,
     }),
-    allowedOrigins: [siteOrigin],
-    secureCookies,
+    allowedOrigins: [config.siteOrigin],
+    secureCookies: config.secureCookies,
   });
   const server = createServer(async (request, response) => {
+    const declaredLength = Number(request.headers["content-length"]);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
+      request.resume();
+      const result = json(413, { code: "request_too_large" });
+      response.writeHead(result.status, Object.fromEntries(result.headers));
+      response.end(Buffer.from(await result.arrayBuffer()));
+      return;
+    }
     const chunks = [];
-    for await (const chunk of request) chunks.push(chunk);
-    const incoming = new Request(
-      `http://${request.headers.host}${request.url}`,
-      {
-        method: request.method,
-        headers: request.headers,
-        body: chunks.length ? Buffer.concat(chunks) : undefined,
-      },
-    );
+    let receivedBytes = 0;
+    for await (const chunk of request) {
+      receivedBytes += chunk.length;
+      if (receivedBytes <= MAX_BODY_BYTES) chunks.push(chunk);
+    }
+    if (receivedBytes > MAX_BODY_BYTES) {
+      const result = json(413, { code: "request_too_large" });
+      response.writeHead(result.status, Object.fromEntries(result.headers));
+      response.end(Buffer.from(await result.arrayBuffer()));
+      return;
+    }
+    const incoming = new Request(`http://localhost${request.url}`, {
+      method: request.method,
+      headers: request.headers,
+      body: chunks.length ? Buffer.concat(chunks) : undefined,
+    });
     const result = await handler(incoming);
     response.writeHead(result.status, Object.fromEntries(result.headers));
     response.end(Buffer.from(await result.arrayBuffer()));
   });
-  return server.listen(port, "127.0.0.1");
+  server.requestTimeout = 15_000;
+  server.headersTimeout = 10_000;
+  server.keepAliveTimeout = 5_000;
+  server.maxRequestsPerSocket = 100;
+  return server.listen(config.port, "127.0.0.1");
 }
 
 if (

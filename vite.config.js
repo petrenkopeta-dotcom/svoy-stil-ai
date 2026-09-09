@@ -27,4 +27,19 @@ export default defineConfig({
   plugins: [react(), cvAutoPlugin()],
   optimizeDeps: { entries: ["index.html"] },
   server: { watch: { ignored: ["**/.cv-auto-runtime/**"] } },
+  build: {
+    sourcemap: false,
+    rolldownOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("node_modules/lucide-react")) return "icons";
+          if (
+            id.includes("node_modules/react") ||
+            id.includes("node_modules/react-dom")
+          )
+            return "react";
+        },
+      },
+    },
+  },
 });

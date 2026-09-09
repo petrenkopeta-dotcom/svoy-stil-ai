@@ -1,0 +1,32 @@
+name: Bug report
+description: Воспроизводимый дефект без персональных данных
+title: "[BUG] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Не прикладывайте токены, email, пользовательские фотографии или дампы browser storage.
+  - type: textarea
+    id: observed
+    attributes:
+      label: Что произошло
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидаемое поведение
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Шаги воспроизведения на синтетических данных
+    validations:
+      required: true
+  - type: input
+    id: commit
+    attributes:
+      label: Commit SHA
+    validations:
+      required: true

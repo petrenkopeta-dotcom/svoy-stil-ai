@@ -54,6 +54,7 @@ coverage/
 /scripts/*
 !/scripts/auth-config-diagnostics.mjs
 !/scripts/check-repository-boundary.mjs
+!/scripts/check-bundle-budget.mjs
 
 # Temporary files and scripts
 /tmp_*.py

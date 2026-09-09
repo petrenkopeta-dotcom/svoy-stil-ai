@@ -4,6 +4,7 @@ import {
   createAuthBff,
   createFixedWindowRateLimiter,
   providerCommandAllowed,
+  validateAuthBffConfig,
 } from "../server/authBff.mjs";
 const origin = "https://stylist.example";
 const headers = {
@@ -382,4 +383,51 @@ test("BFF responses carry baseline API security headers", async () => {
     response.headers.get("cross-origin-resource-policy"),
     "same-origin",
   );
+});
+
+test("health is minimal and known routes reject wrong methods", async () => {
+  const handle = createAuthBff({
+    provider: providerStub(),
+    allowedOrigins: [origin],
+  });
+  const health = await handle(new Request(`${origin}/api/health`));
+  assert.equal(health.status, 200);
+  assert.deepEqual(await health.json(), { status: "ok" });
+  const wrongMethod = await handle(
+    new Request(`${origin}/api/auth/session`, { method: "PUT" }),
+  );
+  assert.equal(wrongMethod.status, 405);
+  assert.equal(wrongMethod.headers.get("allow"), "GET");
+});
+
+test("production BFF configuration rejects unsafe origins, ports, and cookies", () => {
+  assert.deepEqual(
+    validateAuthBffConfig({
+      port: 8787,
+      siteOrigin: "https://stylist.example",
+      secureCookies: true,
+      production: true,
+    }),
+    { port: 8787, siteOrigin: "https://stylist.example", secureCookies: true },
+  );
+  assert.deepEqual(
+    validateAuthBffConfig({
+      port: 8787,
+      siteOrigin: "http://localhost:5173",
+      secureCookies: false,
+      production: false,
+    }),
+    { port: 8787, siteOrigin: "http://localhost:5173", secureCookies: false },
+  );
+  for (const config of [
+    { port: 0, siteOrigin: origin, secureCookies: true },
+    { port: 8787, siteOrigin: "http://stylist.example", secureCookies: true },
+    {
+      port: 8787,
+      siteOrigin: "https://stylist.example/path",
+      secureCookies: true,
+    },
+    { port: 8787, siteOrigin: origin, secureCookies: false, production: true },
+  ])
+    assert.throws(() => validateAuthBffConfig(config));
 });
