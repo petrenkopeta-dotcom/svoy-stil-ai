@@ -1,9 +1,19 @@
-# Правила изменений
+# Вклад в проект
 
-1. Не добавляйте фото, QA evidence, corpora, credentials и machine-local paths.
-2. Создавайте изменение в отдельной ветке через pull request.
-3. Перед review выполните `npm ci`, `npm run repo:check`, `npm test` и `npm run build`.
-4. Новая функциональность должна иметь тест границы данных и честное описание local/production статуса.
-5. Архитектурные решения по auth, persistence, privacy и внешним провайдерам оформляются ADR.
+## Перед изменением
 
-Нельзя ослаблять privacy/security gate ради прохождения happy path. Generated evidence хранится вне основного репозитория и прикладывается к release decision ссылкой и manifest hash.
+- Создайте ветку от актуального `main`.
+- Не добавляйте реальные фото, email, browser profiles, `.env`, QA evidence или eval corpus.
+- Для auth/privacy/data изменений сначала определите негативный сценарий и fail-closed результат.
+- Архитектурные решения по auth, persistence, privacy и внешним провайдерам оформляйте ADR.
+
+## Локальная проверка
+
+```bash
+npm ci --ignore-scripts
+npm run verify
+```
+
+PR должен описывать риск, откат и фактически выполненные проверки. Большие архитектурные изменения разделяются на проверяемые шаги; документация TARGET не считается реализованной функциональностью.
+
+Нельзя ослаблять privacy/security gate ради happy path. Generated evidence хранится вне Git и привязывается к release decision ссылкой и manifest hash.
