@@ -1,5 +1,4 @@
 import React, { useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
 import { ArrowLeft, ArrowRight, Check, ChevronRight, CircleHelp, Clock, CloudSun, Heart, History, Plus, RotateCcw, ShieldCheck, Sparkles, ThumbsDown, Upload, UserRound, WandSparkles, X } from "lucide-react";
 import "./styles.css";
 import { generateOutfits, missingCategories, missingCategoriesForAnchor } from "./outfitEngine";
@@ -10,7 +9,7 @@ import { StylistExplanationCard } from "./StylistExplanationCard.js";
 import { runStylistReasoningPipeline } from "./stylistReasoningPipeline.js";
 import { adaptGarmentsToReasoningInput } from "./garmentReasoningAdapter.js";
 import { PhotoIntake } from "./PhotoIntake.jsx";
-import { ContextProvider, useStylistContext } from "./ContextProvider.jsx";
+import { useStylistContext } from "./ContextProvider.jsx";
 import { createLocalRepositories } from "./storageRepositories.js";
 import { createDemoState } from "./demoPersonalFlow.js";
 import { createOnboardingPreferencesPersistence } from "./onboardingPreferencesPersistence.js";
@@ -180,7 +179,7 @@ const defaults = {
   limits: ["Без каблуков"],
   temp: "Астрахань · +18°",
 };
-function App() {
+export function App() {
   const stylistContext = useStylistContext();
   const localPilotPhoto = isLocalPilotPhotoEnabled({ flag: import.meta.env.VITE_LOCAL_PILOT_PHOTO, hostname: globalThis.location?.hostname });
   const localCapsule = isLocalCapsuleEnabled({ flag: import.meta.env.VITE_CAPSULE_LOCAL_PILOT, hostname: globalThis.location?.hostname });
@@ -1848,8 +1847,3 @@ function AddItem({ close, submit, localPilot = false }) {
     </AccessibleDialog>
   );
 }
-createRoot(document.getElementById("root")).render(
-  <ContextProvider>
-    <App />
-  </ContextProvider>,
-);
