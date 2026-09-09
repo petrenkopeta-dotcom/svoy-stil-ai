@@ -28,6 +28,9 @@ export function createBffAuthAdapter({ baseUrl = "", fetchFn = globalThis.fetch 
     verifyCode: ({ email, code }) => request("/api/auth/verify", { email, code }, { validate: validSession }),
     getSession: () => request("/api/auth/session", undefined, { validate: validSession }),
     logout: () => request("/api/auth/logout", {}, { validate: (payload) => payload?.status === "signed_out" }),
-    authenticatedRequest: ({ method, path, body }) => request(`/api/provider${path}`, { method, body }),
+    authenticatedRequest: ({ method, path, body, headers, rawBody, returnResponse }) => {
+      if (rawBody || returnResponse) throw new AuthPortError(AUTH_ERROR_CODES.PROVIDER_UNAVAILABLE);
+      return request(`/api/provider${path}`, { method, body, headers });
+    },
   };
 }

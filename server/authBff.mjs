@@ -6,6 +6,19 @@ const json = (status, payload, headers = {}) => new Response(JSON.stringify(payl
 const cookieValue = (request, name) => request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1) || null;
 const sessionCookie = (id, secure) => [`ai_stylist_session=${id}`, "Path=/", "HttpOnly", "SameSite=Lax", secure ? "Secure" : ""].filter(Boolean).join("; ");
 const expiredCookie = (secure) => [`ai_stylist_session=`, "Path=/", "HttpOnly", "SameSite=Lax", secure ? "Secure" : "", "Max-Age=0"].filter(Boolean).join("; ");
+const PROVIDER_TABLES = new Set(["profiles", "stylist_preferences", "user_consents", "wardrobe_items", "saved_outfits", "feedback_events", "shopping_drafts"]);
+const PROVIDER_METHODS = new Set(["GET", "POST", "PATCH"]);
+
+export function providerCommandAllowed(routePath, command) {
+  if (!command || typeof command !== "object" || Array.isArray(command)) return false;
+  const method = String(command.method || "POST").toUpperCase();
+  const requestPath = String(command.path || "");
+  if (!requestPath.startsWith("/") || requestPath.includes("\\") || /%2e|%2f|%5c/i.test(requestPath)) return false;
+  if (routePath !== `/api/provider${requestPath}`) return false;
+  if (requestPath === "/functions/v1/delete-account") return method === "POST";
+  const match = requestPath.match(/^\/rest\/v1\/([a-z_]+)(?:\?[^#]*)?$/);
+  return Boolean(match && PROVIDER_TABLES.has(match[1]) && PROVIDER_METHODS.has(method));
+}
 
 export function createAuthBff({ provider, allowedOrigins, secureCookies = true, sessions = new Map(), now = () => Date.now(), newSessionId = randomUUID } = {}) {
   if (!provider) throw new TypeError("provider is required");
@@ -21,7 +34,7 @@ export function createAuthBff({ provider, allowedOrigins, secureCookies = true, 
       if (url.pathname === "/api/auth/verify" && request.method === "POST") { const { email, code } = await readBody(request); const providerSession = await provider.verifyCode({ email, code }); const id = newSessionId(); sessions.set(id, providerSession); return json(200, { userId: providerSession.userId, email: providerSession.email, expiresAt: providerSession.expiresAt }, { "Set-Cookie": sessionCookie(id, secureCookies) }); }
       if (url.pathname === "/api/auth/session" && request.method === "GET") { const active = activeSession(request); return active ? json(200, { userId: active.session.userId, email: active.session.email, expiresAt: active.session.expiresAt }) : json(401, { code: "session_expired" }, { "Set-Cookie": expiredCookie(secureCookies) }); }
       if (url.pathname === "/api/auth/logout" && request.method === "POST") { const active = activeSession(request); if (active) { sessions.delete(active.id); await provider.logout(active.session).catch(() => {}); } return json(200, { status: "signed_out" }, { "Set-Cookie": expiredCookie(secureCookies) }); }
-      if (url.pathname.startsWith("/api/provider/") && request.method === "POST") { const active = activeSession(request); if (!active) return json(401, { code: "session_expired" }); const command = await readBody(request); return json(200, await provider.authenticatedRequest(active.session, command)); }
+      if (url.pathname.startsWith("/api/provider/") && request.method === "POST") { const active = activeSession(request); if (!active) return json(401, { code: "session_expired" }); const command = await readBody(request); if (!providerCommandAllowed(`${url.pathname}${url.search}`, command)) return json(403, { code: "provider_command_rejected" }); return json(200, await provider.authenticatedRequest(active.session, command)); }
       return json(404, { code: "not_found" });
     } catch (error) { const status = error?.status === 413 ? 413 : error?.code === "rate_limited" ? 429 : 503; return json(status, { code: status === 429 ? "rate_limited" : status === 413 ? "request_too_large" : "provider_unavailable" }); }
   };
@@ -31,7 +44,7 @@ export function createSupabaseServerProvider({ url, publishableKey, fetchFn = fe
   const base = String(url || "").replace(/\/+$/, "");
   if (!/^https:\/\//.test(base) || !publishableKey) throw new TypeError("valid server-side Supabase config is required");
   const auth = async (path, body, token) => { const response = await fetchFn(`${base}/auth/v1/${path}`, { method: "POST", headers: { apikey: publishableKey, "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) }); const payload = await response.json().catch(() => ({})); if (!response.ok) throw Object.assign(new Error("provider_error"), { code: response.status === 429 ? "rate_limited" : "provider_error" }); return payload; };
-  return { sendCode: ({ email }) => auth("otp", { email, create_user: true }), async verifyCode({ email, code }) { const payload = await auth("verify", { email, token: code, type: "email" }); return { userId: payload.user?.id, email: payload.user?.email || email, accessToken: payload.access_token, refreshToken: payload.refresh_token, expiresAt: payload.expires_at }; }, logout: (session) => auth("logout", {}, session.accessToken), async authenticatedRequest(session, command) { const response = await fetchFn(`${base}${command.path}`, { method: command.method || "POST", headers: { apikey: publishableKey, Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json" }, body: command.body ? JSON.stringify(command.body) : undefined }); const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error("provider_error"); return payload; } };
+  return { sendCode: ({ email }) => auth("otp", { email, create_user: true }), async verifyCode({ email, code }) { const payload = await auth("verify", { email, token: code, type: "email" }); return { userId: payload.user?.id, email: payload.user?.email || email, accessToken: payload.access_token, refreshToken: payload.refresh_token, expiresAt: payload.expires_at }; }, logout: (session) => auth("logout", {}, session.accessToken), async authenticatedRequest(session, command) { const allowedHeaders = command.headers?.Prefer ? { Prefer: String(command.headers.Prefer) } : {}; const response = await fetchFn(`${base}${command.path}`, { method: command.method || "POST", headers: { apikey: publishableKey, Authorization: `Bearer ${session.accessToken}`, "Content-Type": "application/json", ...allowedHeaders }, body: command.body ? JSON.stringify(command.body) : undefined }); const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error("provider_error"); return payload; } };
 }
 
 export function startAuthBff({ port = 8787, siteOrigin = process.env.AUTH_SITE_ORIGIN, supabaseUrl = process.env.SUPABASE_URL, publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY, secureCookies = process.env.AUTH_INSECURE_LOCAL_COOKIE !== "1" } = {}) {

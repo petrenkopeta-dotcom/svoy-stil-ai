@@ -4,6 +4,7 @@ import fs from "node:fs";
 import { createBffAuthAdapter } from "./auth/BffAuthAdapter.js";
 import { createAuthRepository } from "./auth/AuthRepository.js";
 import { AUTH_ERROR_CODES, AUTH_STATES } from "./auth/AuthPort.js";
+import { authTransportFromEnv } from "./auth/authConfig.js";
 
 const response = (status, payload, malformed = false) => ({ status, ok: status >= 200 && status < 300, json: async () => { if (malformed) throw new SyntaxError("invalid json"); return payload; } });
 
@@ -35,9 +36,17 @@ test("BFF checking probe supports retry and recovery after reload", async () => 
 test("runtime and UI declare checking, unavailable retry and missing-config fail closed", () => {
   const main = fs.readFileSync(new URL("./main.jsx", import.meta.url), "utf8");
   const dialog = fs.readFileSync(new URL("./AuthDialog.jsx", import.meta.url), "utf8");
+  assert.match(main, /authTransportFromEnv\(import\.meta\.env/);
   assert.match(main, /authTransport === "bff" \? "checking"/);
   assert.match(main, /setProviderStatus\("unavailable"\)/);
   assert.match(dialog, /Проверяем доступность защищённого входа/);
   assert.match(dialog, /Проверить ещё раз/);
   assert.match(dialog, /providerStatus !== "available"/);
+});
+
+test("BFF is default and direct auth requires an explicit loopback-only override", () => {
+  assert.equal(authTransportFromEnv({}, "stylist.example"), "bff");
+  assert.equal(authTransportFromEnv({ VITE_AUTH_TRANSPORT: "direct", VITE_ALLOW_DIRECT_AUTH: "true" }, "stylist.example"), "bff");
+  assert.equal(authTransportFromEnv({ VITE_AUTH_TRANSPORT: "direct" }, "localhost"), "bff");
+  assert.equal(authTransportFromEnv({ VITE_AUTH_TRANSPORT: "direct", VITE_ALLOW_DIRECT_AUTH: "true" }, "localhost"), "direct");
 });

@@ -11,3 +11,13 @@ export function diagnoseAuthConfig({ url, publishableKey } = {}) {
   if (!(publishableKey.length >= 20 || /^sb_publishable_/i.test(publishableKey))) return { ...result, reason: "malformed_key" };
   return { ...result, configured: true, reason: null };
 }
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+export function authTransportFromEnv(env = {}, hostname = globalThis.location?.hostname) {
+  const directRequested = env.VITE_AUTH_TRANSPORT === "direct";
+  const directExplicitlyAllowed = env.VITE_ALLOW_DIRECT_AUTH === "true";
+  return directRequested && directExplicitlyAllowed && LOOPBACK_HOSTS.has(String(hostname || "").toLowerCase())
+    ? "direct"
+    : "bff";
+}

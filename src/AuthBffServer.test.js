@@ -1,7 +1,18 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createAuthBff } from "../server/authBff.mjs";
+import { createAuthBff, providerCommandAllowed } from "../server/authBff.mjs";
 const origin = "https://stylist.example";
 const headers = { Origin: origin, "X-CSRF-Intent": "ai-stylist", "Content-Type": "application/json" };
 test("BFF keeps provider tokens server-side and restores a sanitized cookie session", async () => { const calls = []; const provider = { sendCode: async (value) => calls.push(["otp", value]), verifyCode: async () => ({ userId: "u1", email: "person@example.test", accessToken: "secret-access", refreshToken: "secret-refresh", expiresAt: 2000 }), logout: async () => calls.push(["logout"]), authenticatedRequest: async (session, command) => { calls.push(["proxy", session.accessToken, command]); return { ok: true }; } }; const handle = createAuthBff({ provider, allowedOrigins: [origin], now: () => 1_000_000, newSessionId: () => "opaque-session" }); assert.equal((await handle(new Request(`${origin}/api/auth/otp`, { method: "POST", headers, body: JSON.stringify({ email: "person@example.test" }) }))).status, 202); const verified = await handle(new Request(`${origin}/api/auth/verify`, { method: "POST", headers, body: JSON.stringify({ email: "person@example.test", code: "123456" }) })); const verifiedText = await verified.text(); assert.doesNotMatch(verifiedText, /secret-access|secret-refresh/); const cookie = verified.headers.get("set-cookie"); assert.match(cookie, /HttpOnly/); assert.match(cookie, /Secure/); assert.match(cookie, /SameSite=Lax/); const session = await handle(new Request(`${origin}/api/auth/session`, { headers: { Cookie: "ai_stylist_session=opaque-session" } })); assert.equal(session.status, 200); assert.doesNotMatch(await session.text(), /secret-access|secret-refresh/); const proxy = await handle(new Request(`${origin}/api/provider/functions/v1/delete-account`, { method: "POST", headers: { ...headers, Cookie: "ai_stylist_session=opaque-session" }, body: JSON.stringify({ method: "POST", path: "/functions/v1/delete-account", body: {} }) })); assert.equal(proxy.status, 200); assert.equal(calls.at(-1)[1], "secret-access"); });
 test("BFF rejects cross-origin writes and expires unknown sessions with 401", async () => { const provider = { sendCode: async () => assert.fail(), verifyCode: async () => assert.fail(), logout: async () => {}, authenticatedRequest: async () => assert.fail() }; const handle = createAuthBff({ provider, allowedOrigins: [origin] }); assert.equal((await handle(new Request(`${origin}/api/auth/otp`, { method: "POST", headers: { Origin: "https://evil.example", "X-CSRF-Intent": "ai-stylist" }, body: "{}" }))).status, 403); const expired = await handle(new Request(`${origin}/api/auth/session`, { headers: { Cookie: "ai_stylist_session=missing" } })); assert.equal(expired.status, 401); assert.match(expired.headers.get("set-cookie"), /Max-Age=0/); });
+
+test("provider proxy accepts only explicit application resources", () => {
+  assert.equal(providerCommandAllowed("/api/provider/rest/v1/profiles?select=*", { method: "GET", path: "/rest/v1/profiles?select=*" }), true);
+  assert.equal(providerCommandAllowed("/api/provider/functions/v1/delete-account", { method: "POST", path: "/functions/v1/delete-account", body: {} }), true);
+  for (const command of [
+    { method: "POST", path: "/auth/v1/admin/users" },
+    { method: "DELETE", path: "/rest/v1/profiles" },
+    { method: "POST", path: "/rest/v1/unknown_table" },
+    { method: "POST", path: "/rest/v1/%2e%2e/auth" },
+  ]) assert.equal(providerCommandAllowed(`/api/provider${command.path}`, command), false);
+});

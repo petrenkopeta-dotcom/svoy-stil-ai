@@ -44,7 +44,7 @@ import { createBffAuthAdapter } from "./auth/BffAuthAdapter.js";
 import { createAuthGate } from "./authGate.js";
 import { AccountProfilePanel } from "./AccountProfilePanel.jsx";
 import { catalogForAuth, screenForAuth } from "./authScreenPolicy.js";
-import { diagnoseAuthConfig } from "./auth/authConfig.js";
+import { authTransportFromEnv, diagnoseAuthConfig } from "./auth/authConfig.js";
 import { createAccountDeletionController } from "./account/AccountDeletionController.js";
 import { unavailableAccountPort } from "./account/AccountPort.js";
 import { createSupabaseAccountAdapter } from "./account/SupabaseAccountAdapter.js";
@@ -240,7 +240,7 @@ function App() {
   const preferenceQuickEditGuardRef = useRef(null);
   const [authConfig] = useState(() => supabaseAuthConfigFromEnv(import.meta.env));
   const [authDiagnostics] = useState(() => diagnoseAuthConfig(authConfig));
-  const [authTransport] = useState(() => (import.meta.env.VITE_AUTH_TRANSPORT === "bff" ? "bff" : "direct"));
+  const [authTransport] = useState(() => authTransportFromEnv(import.meta.env, globalThis.location?.hostname));
   const [authProvider] = useState(() => (authTransport === "bff" ? createBffAuthAdapter() : authDiagnostics.configured ? createSupabaseAuthAdapter(authConfig) : null));
   const [providerStatus, setProviderStatus] = useState(() => (authTransport === "bff" ? "checking" : authProvider ? "available" : "unavailable"));
   const [authRepository] = useState(() =>
