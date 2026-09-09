@@ -131,6 +131,47 @@ export function createFixedWindowRateLimiter({
   };
 }
 
+export function createMemorySessionStore({
+  sessions = new Map(),
+  maxSessions = 10_000,
+  now = () => Date.now(),
+} = {}) {
+  if (!(sessions instanceof Map)) throw new TypeError("sessions must be a Map");
+  if (!Number.isInteger(maxSessions) || maxSessions < 1)
+    throw new TypeError("maxSessions must be a positive integer");
+  const removeExpired = () => {
+    const time = now();
+    for (const [id, session] of sessions)
+      if (Number(session?.expiresAt) * 1000 <= time) sessions.delete(id);
+  };
+  return Object.freeze({
+    durable: false,
+    async get(id) {
+      const session = sessions.get(id);
+      if (!session || Number(session.expiresAt) * 1000 <= now()) {
+        if (id) sessions.delete(id);
+        return null;
+      }
+      return session;
+    },
+    async put(id, session) {
+      removeExpired();
+      while (sessions.size >= maxSessions)
+        sessions.delete(sessions.keys().next().value);
+      sessions.set(id, session);
+    },
+    async delete(id) {
+      sessions.delete(id);
+    },
+  });
+}
+
+const validSessionStore = (store) =>
+  store &&
+  typeof store.get === "function" &&
+  typeof store.put === "function" &&
+  typeof store.delete === "function";
+
 function validProviderQuery(requestPath) {
   const url = new URL(requestPath, "https://provider.invalid");
   const keys = [...url.searchParams.keys()];
@@ -184,7 +225,8 @@ export function createAuthBff({
   provider,
   allowedOrigins,
   secureCookies = true,
-  sessions = new Map(),
+  sessionStore,
+  sessions,
   sessionLimit = 10_000,
   now = () => Date.now(),
   newSessionId = randomUUID,
@@ -193,6 +235,11 @@ export function createAuthBff({
   if (!provider) throw new TypeError("provider is required");
   if (!Number.isInteger(sessionLimit) || sessionLimit < 1)
     throw new TypeError("sessionLimit must be a positive integer");
+  const store =
+    sessionStore ||
+    createMemorySessionStore({ sessions, maxSessions: sessionLimit, now });
+  if (!validSessionStore(store))
+    throw new TypeError("sessionStore must implement get, put, and delete");
   const origins = new Set(allowedOrigins || []);
   const requireIntent = (request) =>
     origins.has(request.headers.get("origin")) &&
@@ -218,25 +265,14 @@ export function createAuthBff({
       throw fail("invalid_json", 400, "invalid_request");
     }
   };
-  const removeExpiredSessions = () => {
-    const time = now();
-    for (const [id, session] of sessions)
-      if (Number(session?.expiresAt) * 1000 <= time) sessions.delete(id);
-  };
-  const activeSession = (request) => {
+  const activeSession = async (request) => {
     const id = cookieValue(request, SESSION_COOKIE);
-    const session = id && sessions.get(id);
+    const session = id && (await store.get(id));
     if (!session || Number(session.expiresAt) * 1000 <= now()) {
-      if (id) sessions.delete(id);
+      if (id) await store.delete(id);
       return null;
     }
     return { id, session };
-  };
-  const storeSession = (id, session) => {
-    removeExpiredSessions();
-    while (sessions.size >= sessionLimit)
-      sessions.delete(sessions.keys().next().value);
-    sessions.set(id, session);
   };
   const consumeRateLimit = (scope, email) => {
     if (!rateLimiter.consume(scope, email))
@@ -270,7 +306,7 @@ export function createAuthBff({
         if (!validProviderSession(providerSession, now()))
           throw new Error("invalid_provider_session");
         const id = newSessionId();
-        storeSession(id, providerSession);
+        await store.put(id, providerSession);
         return json(
           200,
           {
@@ -282,7 +318,7 @@ export function createAuthBff({
         );
       }
       if (url.pathname === "/api/auth/session" && request.method === "GET") {
-        const active = activeSession(request);
+        const active = await activeSession(request);
         return active
           ? json(200, {
               userId: active.session.userId,
@@ -297,9 +333,9 @@ export function createAuthBff({
       }
       if (url.pathname === "/api/auth/logout" && request.method === "POST") {
         await readBody(request);
-        const active = activeSession(request);
+        const active = await activeSession(request);
         if (active) {
-          sessions.delete(active.id);
+          await store.delete(active.id);
           await provider.logout(active.session).catch(() => {});
         }
         return json(
@@ -312,7 +348,7 @@ export function createAuthBff({
         url.pathname.startsWith("/api/provider/") &&
         request.method === "POST"
       ) {
-        const active = activeSession(request);
+        const active = await activeSession(request);
         if (!active) return json(401, { code: "session_expired" });
         const command = await readBody(request);
         if (!providerCommandAllowed(`${url.pathname}${url.search}`, command))
@@ -456,8 +492,20 @@ export function startAuthBff({
   supabaseUrl = process.env.SUPABASE_URL,
   publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY,
   secureCookies = process.env.AUTH_INSECURE_LOCAL_COOKIE !== "1",
+  sessionStore,
+  production = process.env.NODE_ENV === "production",
 } = {}) {
-  const config = validateAuthBffConfig({ port, siteOrigin, secureCookies });
+  const config = validateAuthBffConfig({
+    port,
+    siteOrigin,
+    secureCookies,
+    production,
+  });
+  if (
+    production &&
+    (!validSessionStore(sessionStore) || sessionStore.durable !== true)
+  )
+    throw new Error("a durable sessionStore is required in production");
   const handler = createAuthBff({
     provider: createSupabaseServerProvider({
       url: supabaseUrl,
@@ -465,6 +513,7 @@ export function startAuthBff({
     }),
     allowedOrigins: [config.siteOrigin],
     secureCookies: config.secureCookies,
+    sessionStore,
   });
   const server = createServer(async (request, response) => {
     const declaredLength = Number(request.headers["content-length"]);
