@@ -1,0 +1,11 @@
+# AUTH-PROFILE-17 — BFF session contract
+
+Static Vite cannot securely persist a provider session across reload without JavaScript-readable credentials. Production uses same-origin BFF routes: `POST /api/auth/otp`, `POST /api/auth/verify`, `GET /api/auth/session`, `POST /api/auth/logout`, and authenticated provider proxy/account routes. Verify exchanges OTP server-side and sets an opaque session cookie with `Secure; HttpOnly; SameSite=Lax; Path=/`; no email/access/refresh token is returned or browser-stored. State-changing routes require origin validation and CSRF token/header. Server stores encrypted provider refresh credentials, rotates session identifiers, expires/revokes centrally, and returns only `{userId,email,expiresAt}` from session. UI states are `restore_pending`, `authenticated`, `session_expired`, `signed_out`.
+
+Browser storage was rejected because XSS can read it and shared-device cleanup is unreliable. Live reload remains HOLD until this contract is deployed behind the same owned HTTPS origin.
+
+## Executable local/runtime readiness (AUTH-PROFILE-23)
+
+`server/authBff.mjs` is a dependency-free executable BFF and `src/AuthBffServer.test.js` verifies OTP/verify/session/logout/proxy behavior, origin + intent enforcement, `401 session_expired`, and that provider tokens never enter browser responses. Start it with `npm run auth:bff` only after setting server-side `AUTH_SITE_ORIGIN`, `SUPABASE_URL`, and `SUPABASE_PUBLISHABLE_KEY`. The browser build selects it with `VITE_AUTH_TRANSPORT=bff`; that switch contains no secret. Default cookies are `Secure; HttpOnly; SameSite=Lax`. `AUTH_INSECURE_LOCAL_COOKIE=1` exists only for explicit HTTP localhost diagnostics and is not production evidence.
+
+The included in-memory opaque-session store survives browser reload while the BFF process is alive, but production hosting must replace it with an encrypted/durable or centrally revocable server-side store. A real Supabase project, Email OTP/SMTP configuration, HTTPS same-origin routing, and live two-user tests are still external HOLD conditions. Missing server configuration fails at startup; it does not fall back to mock authentication.
