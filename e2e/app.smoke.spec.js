@@ -16,8 +16,9 @@ test("original photo drafts stay in memory and unverified photo saving is blocke
     await draft.save({ dto: { blob: original, networkAllowed: false } });
     const restored = Boolean((await draft.load())?.dto?.blob);
     let code;
+    const storage = createPhotoStorage();
     try {
-      await createPhotoStorage().save(original, {
+      await storage.save(original, {
         granted: true,
         policyVersion: PHOTO_POLICY_VERSION,
       });
@@ -29,6 +30,7 @@ test("original photo drafts stay in memory and unverified photo saving is blocke
       restored,
       code,
       cleared: (await draft.load()) === null,
+      photoCount: (await storage.backend.getAll()).length,
       databases: (await indexedDB.databases()).map((db) => db.name),
     };
   });
@@ -36,7 +38,7 @@ test("original photo drafts stay in memory and unverified photo saving is blocke
   expect(result.cleared).toBe(true);
   expect(result.code).toBe("unsafe_photo");
   expect(result.databases).not.toContain("ai-stylist-reference-draft");
-  expect(result.databases).not.toContain("ai-stylist-photos");
+  expect(result.photoCount).toBe(0);
 });
 
 test("three answers reveal the first demo look without a tour blocking it", async ({
@@ -72,6 +74,7 @@ test("three answers reveal the first demo look without a tour blocking it", asyn
 
 test("SPA boots at a real mobile viewport without pre-consent egress", async ({
   page,
+  baseURL,
 }) => {
   const pageErrors = [];
   const consoleErrors = [];
@@ -83,7 +86,7 @@ test("SPA boots at a real mobile viewport without pre-consent egress", async ({
   });
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (url.origin !== "http://127.0.0.1:4173")
+    if (url.origin !== new URL(baseURL).origin)
       externalRequests.push(url.origin);
   });
 
