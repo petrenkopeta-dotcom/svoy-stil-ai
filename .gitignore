@@ -29,6 +29,11 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 /.cv-auto-runtime/
+# Durable server state contains credentials and private wardrobe metadata.
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
 
 # Browser profiles and browser-owned data
 **/edge-profile/
@@ -91,6 +96,7 @@ test-results/
 !/scripts/auth-config-diagnostics.mjs
 !/scripts/check-repository-boundary.mjs
 !/scripts/check-bundle-budget.mjs
+!/scripts/run-tests.mjs
 
 # Temporary files and scripts
 /tmp_*.py

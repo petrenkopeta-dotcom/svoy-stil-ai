@@ -162,9 +162,10 @@ test("photo proxy accepts only the authenticated owner path", () => {
     assert.equal(providerPhotoPathAllowed(path, "u1"), false);
 });
 
-test("BFF streams an allowlisted photo upload and returns only its receipt", async () => {
+test("BFF accepts a photo only after server validation and returns its receipt", async () => {
   const uploads = [];
   const handle = createAuthBff({
+    validatePhoto: async () => true,
     provider: providerStub({
       uploadPhoto: async (session, upload) => {
         uploads.push({ session, upload });

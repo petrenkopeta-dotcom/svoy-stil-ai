@@ -13,3 +13,14 @@ test("unsafe or external-enabled drafts fail closed", async () => {
   const store = createReferenceDraftStore({ backend: new MemoryReferenceDraftBackend() });
   await assert.rejects(store.save({ dto: { blob: new Blob(["x"]), networkAllowed: true } }), /SAFE_LOCAL_REFERENCE_DRAFT_REQUIRED/);
 });
+
+test("reference originals never open IndexedDB and cannot use durable backends", async () => {
+  let opened = 0;
+  const store = createReferenceDraftStore({ indexedDB: { open() { opened++; throw new Error("disk forbidden"); } } });
+  await store.save({ dto: { blob: new Blob(["synthetic"]), networkAllowed: false } });
+  assert.ok((await store.load()).dto.blob instanceof Blob);
+  assert.equal(opened, 0);
+  await store.clear();
+  assert.equal(await store.load(), null);
+  assert.throws(() => createReferenceDraftStore({ backend: { put() {} } }), /MEMORY_ONLY/);
+});

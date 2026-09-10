@@ -56,7 +56,7 @@ export class IndexedDbPhotoBackend {
   clear() { return this.request("readwrite", (store) => store.clear()); }
 }
 
-export function createPhotoStorage({ backend, indexedDB = globalThis.indexedDB, now = () => Date.now(), randomId = () => globalThis.crypto?.randomUUID?.() || `photo-${now()}-${Math.random().toString(36).slice(2)}`, retentionMs = DEFAULT_PHOTO_RETENTION_MS } = {}) {
+export function createPhotoStorage({ backend, validateCutout, indexedDB = globalThis.indexedDB, now = () => Date.now(), randomId = () => globalThis.crypto?.randomUUID?.() || `photo-${now()}-${Math.random().toString(36).slice(2)}`, retentionMs = DEFAULT_PHOTO_RETENTION_MS } = {}) {
   const durable = backend || (indexedDB?.open ? new IndexedDbPhotoBackend({ indexedDB }) : null);
   const active = durable || new MemoryPhotoBackend();
   const persisted = Boolean(durable);
@@ -67,6 +67,11 @@ export function createPhotoStorage({ backend, indexedDB = globalThis.indexedDB, 
     async save(blob, consent, metadata = {}) {
       if (consent?.granted !== true || consent?.policyVersion !== PHOTO_POLICY_VERSION) throw new PhotoStorageError(PHOTO_STORAGE_CODES.CONSENT_REQUIRED, "Explicit photo storage consent is required");
       if (!(blob instanceof Blob) || blob.size < 1 || !blob.type.startsWith("image/")) throw new PhotoStorageError(PHOTO_STORAGE_CODES.INVALID_PHOTO, "A non-empty image Blob is required");
+      // An application-owned validator must inspect these exact bytes. Metadata
+      // and client supplied safety flags are never evidence of safe pixels.
+      let verified = false;
+      try { verified = typeof validateCutout === "function" && await validateCutout(blob) === true; } catch { /* fail closed */ }
+      if (!verified) throw new PhotoStorageError("unsafe_photo", "Сохранение фото недоступно: проверка отсутствия людей и фона не завершена");
       const createdAt = now();
       const record = { id: randomId(), blob, createdAt, expiresAt: createdAt + ttl, consent: { policyVersion: consent.policyVersion, grantedAt: consent.grantedAt || new Date(createdAt).toISOString() }, metadata: clone(metadata) };
       await safe(() => active.put(record));

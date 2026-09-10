@@ -66,7 +66,9 @@ export function ReferenceExperience({
       }).catch(() => {});
       return () => {
       active = false;
+      generation.current += 1;
       analysisAbort.current?.abort();
+      void referenceDraftStore.clear();
       for (const url of editedUrls.current) URL.revokeObjectURL(url);
       editedUrls.current.clear();
       if (ownedPreviewUrl.current) URL.revokeObjectURL(ownedPreviewUrl.current);
@@ -132,7 +134,7 @@ export function ReferenceExperience({
       );
       setItems(candidates);
       setStage("review");
-      await referenceDraftStore.save({ dto: localDto, items: candidates, stage: "review" }).catch(() => setMessage("Результат готов, но восстановление черновика после закрытия недоступно."));
+      await referenceDraftStore.save({ dto: localDto, items: candidates, stage: "review" }).catch(() => setMessage("Не удалось удержать черновик в памяти. Загрузите фото повторно."));
       setMessage(
         candidates.length
           ? `Предлагаем проверить ${candidates.length} вариант(а). Автомаски — прототипные предположения.`
@@ -145,20 +147,22 @@ export function ReferenceExperience({
         candidates.length ? "review_required" : "empty",
       );
     } catch (error) {
-      if (
-        current !== generation.current ||
-        error.message === "cv_auto_cancelled"
-      )
-        return;
+      if (current !== generation.current) return;
+      await referenceDraftStore.clear();
+      if (ownedPreviewUrl.current) URL.revokeObjectURL(ownedPreviewUrl.current);
+      ownedPreviewUrl.current = null;
+      setDto(null);
+      setItems([]);
+      if (error.message === "cv_auto_cancelled") { setStage("idle"); return; }
       const timedOut = error.message === "cv_auto_timeout";
       const personPresent = error.message === "cv_person_or_face_present";
       setStage(timedOut ? "timeout" : "error");
       setMessage(
         personPresent
-          ? "На фото обнаружено присутствие человека или лица. Автомаска остановлена: выберите фото вещи отдельно или используйте ручной контур. Личность и признаки человека не определяются."
+          ? "На фото обнаружен человек или лицо. Фото не сохранено. Выберите снимок вещи отдельно."
           : timedOut
-          ? "Локальное распознавание не завершилось за 120 секунд."
-          : "Локальное распознавание недоступно. Фото никуда не отправлено.",
+          ? "Распознавание не завершилось за 20 секунд. Фото не сохранено."
+          : "Безопасное распознавание недоступно. Фото не сохранено.",
       );
       emit?.("analyzed", next.provenance, 0, timedOut ? "timeout" : "failed");
     }
