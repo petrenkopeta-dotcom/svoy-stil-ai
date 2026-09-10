@@ -1,5 +1,7 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { pathToFileURL } from "node:url";
+import { createSqliteSessionStore } from "./sqliteSessionStore.mjs";
 
 const SECURITY_HEADERS = {
   "Cache-Control": "no-store",
@@ -271,6 +273,7 @@ export function providerPhotoPathAllowed(pathname, userId) {
 
 export function createAuthBff({
   provider,
+  validatePhoto,
   allowedOrigins,
   secureCookies = true,
   sessionStore,
@@ -430,6 +433,11 @@ export function createAuthBff({
           )
             return json(403, { code: "provider_command_rejected" });
           const photo = await readPhoto(request);
+          // Never trust request metadata or forward unverified pixels upstream.
+          if (typeof validatePhoto !== "function")
+            return json(503, { code: "photo_safety_unavailable" });
+          if ((await validatePhoto(photo.body, photo.contentType)) !== true)
+            return json(422, { code: "unsafe_photo" });
           const receipt = await provider.uploadPhoto(active.session, {
             path: url.pathname.slice("/api/provider".length),
             ...photo,
@@ -597,7 +605,9 @@ export function startAuthBff({
   supabaseUrl = process.env.SUPABASE_URL,
   publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY,
   secureCookies = process.env.AUTH_INSECURE_LOCAL_COOKIE !== "1",
-  sessionStore,
+  sessionStore = process.env.AUTH_SESSION_DB
+    ? createSqliteSessionStore({ filename: process.env.AUTH_SESSION_DB })
+    : undefined,
   production = process.env.NODE_ENV === "production",
 } = {}) {
   const config = validateAuthBffConfig({
@@ -663,7 +673,6 @@ export function startAuthBff({
 }
 
 if (
-  import.meta.url ===
-  new URL(`file:///${String(process.argv[1] || "").replace(/\\/g, "/")}`).href
+  import.meta.url === (process.argv[1] && pathToFileURL(process.argv[1]).href)
 )
   startAuthBff();
