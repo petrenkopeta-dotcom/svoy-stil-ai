@@ -3,6 +3,8 @@
 
 # Build output
 /dist/
+/dist-demo/
+/artifacts/
 
 # Environment and local secrets
 .env
@@ -97,6 +99,7 @@ test-results/
 !/scripts/check-repository-boundary.mjs
 !/scripts/check-bundle-budget.mjs
 !/scripts/run-tests.mjs
+!/scripts/check-demo.mjs
 
 # Temporary files and scripts
 /tmp_*.py
