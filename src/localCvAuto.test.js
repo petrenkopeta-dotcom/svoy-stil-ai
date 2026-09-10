@@ -13,7 +13,7 @@ test("person or face presence fails closed without identity or trait processing"
   for (const safety of [{ personPresent: true, facePresent: false }, { personPresent: false, facePresent: true }]) {
     assert.throws(() => rejectDetectedPersonOrFace({ status: "review_required", safety, candidates: [{ id: "must-not-pass" }] }), /cv_person_or_face_present/);
   }
-  assert.deepEqual(Object.keys(rejectDetectedPersonOrFace({ safety: { personPresent: false, facePresent: false }, candidates: [] }).safety).sort(), ["facePresent", "personPresent"]);
+  assert.deepEqual(Object.keys(rejectDetectedPersonOrFace({ safety: { checked: true, personPresent: false, facePresent: false }, candidates: [] }).safety).sort(), ["checked", "facePresent", "personPresent"]);
 });
 
 test("analysis posts only normalized local bytes to same-origin endpoint and requires review", async () => {
@@ -21,7 +21,7 @@ test("analysis posts only normalized local bytes to same-origin endpoint and req
   Object.defineProperty(globalThis, "location", { configurable: true, value: { hostname: "localhost" } });
   const calls = [];
   const result = await analyzeLocalGarments({ blob: new Blob(["x"], { type: "image/png" }), mime: "image/png", networkAllowed: false }, {
-    photoId: "p1", flag: "true", hostname: "localhost", fetchImpl: async (url, init) => { calls.push({ url, init }); return { ok: true, json: async () => ({ status: "review_required", confirmationRequired: true, candidates: [] }) }; },
+    photoId: "p1", flag: "true", hostname: "localhost", fetchImpl: async (url, init) => { calls.push({ url, init }); return { ok: true, json: async () => ({ status: "review_required", safety: { checked: true, personPresent: false, facePresent: false }, confirmationRequired: true, candidates: [] }) }; },
   });
   assert.equal(calls[0].url, "/api/cv-auto");
   assert.equal(calls[0].init.credentials, "same-origin");

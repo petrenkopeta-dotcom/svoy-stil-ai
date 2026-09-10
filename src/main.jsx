@@ -63,7 +63,7 @@ import { composePersonalLooksV2 } from "./outfitV2AppAdapter.js";
 import "./OutfitV2.css";
 import { ReferenceExperience } from "./ReferenceExperience.jsx";
 import { referenceAnalyticsEvent } from "./referenceWorkflow.js";
-import { cropAlphaBlob, cropReferenceBlob } from "./referenceCrop.js";
+import { cropAlphaBlob } from "./referenceCrop.js";
 
 const demo = [
   {
@@ -951,7 +951,7 @@ export function App() {
                 if (!savedPhoto.meta.persisted) toast("Фото доступно только в этой сессии: постоянное локальное хранилище недоступно");
               } catch (error) {
                 telemetry.emit("first_item_failed", { reason: error?.code === "quota_exceeded" ? "quota" : "storage" });
-                toast(error?.code === "quota_exceeded" ? "Недостаточно места: освободите локальное хранилище и повторите" : "Не удалось сохранить фото локально");
+                toast(error?.code === "unsafe_photo" ? "Фото не сохранено: проверка отсутствия людей и фона недоступна" : error?.code === "quota_exceeded" ? "Недостаточно места: освободите локальное хранилище и повторите" : "Не удалось сохранить фото локально");
                 return;
               }
             }
@@ -1000,7 +1000,8 @@ export function App() {
           try {
             const savedBatch = await Promise.all(batch.map(async (item) => {
               const maskedSource = item.local_cutout_blob || (item.local_cutout_data_url ? await dataUrlToBlob(item.local_cutout_data_url) : null);
-              const photoBlob = maskedSource ? await cropAlphaBlob(maskedSource, item.reference_crop) : await cropReferenceBlob(sourceBlob, item.reference_crop);
+              if (!maskedSource) throw new Error("safe_cutout_required");
+              const photoBlob = await cropAlphaBlob(maskedSource, item.reference_crop);
               const savedPhoto = await photoStorage.save(photoBlob, {
                 granted: true,
                 policyVersion: PHOTO_POLICY_VERSION,

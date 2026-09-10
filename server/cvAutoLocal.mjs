@@ -7,7 +7,6 @@ import {
   statSync,
 } from "node:fs";
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -156,8 +155,6 @@ async function body(request) {
   if (!size) throw Object.assign(new Error("empty_input"), { status: 400 });
   return Buffer.concat(chunks);
 }
-const dataUrl = async (file, mime) =>
-  `data:${mime};base64,${(await readFile(file)).toString("base64")}`;
 
 export function createCvWorkerManager({
   root = process.cwd(),
@@ -207,8 +204,8 @@ export function createCvWorkerManager({
     new Promise((resolve, reject) => {
       const script = path.join(
         root,
-        "prototypes",
-        "cv_auto_01",
+        "runtime",
+        "cv",
         "worker_service.py",
       );
       stderr = "";
@@ -444,76 +441,11 @@ export function resetSharedCvWorkerForTests() {
   sharedManager = null;
 }
 
-export async function runCvAutoLocal({
-  bytes,
-  mime,
-  photoId,
-  root = process.cwd(),
-  signal,
-  manager = sharedCvWorkerManager({ root }),
-}) {
-  const work = await mkdtemp(path.join(tmpdir(), "ai-stylist-cv-")),
-    input = path.join(work, `input${MIME_EXT.get(mime)}`),
-    output = path.join(work, "out");
-  try {
-    await mkdir(output);
-    await writeFile(input, bytes);
-    const started = performance.now(),
-      { report, worker } = await manager.analyze({
-        image: input,
-        output,
-        maxCandidates: 3,
-        signal,
-      });
-    const width = report.input.width,
-      height = report.input.height,
-      candidates = await Promise.all(
-        report.candidates.map(async (item) => {
-          const [x1, y1, x2, y2] = item.detection_box_xyxy;
-          return {
-            id: `candidate-${String(item.rank).padStart(2, "0")}`,
-            label: item.label,
-            detectionScore: item.detection_score,
-            maskConfidence: item.sam_predicted_iou,
-            edgeQuality: null,
-            visibility: item.measurements?.touches_image_edge?.any
-              ? "cropped"
-              : "full",
-            color: item.color || { label: "unknown", confidence: null },
-            crop: {
-              x: x1 / width,
-              y: y1 / height,
-              width: (x2 - x1) / width,
-              height: (y2 - y1) / height,
-            },
-            maskUrl: await dataUrl(
-              path.join(output, item.artifacts.mask),
-              "image/png",
-            ),
-            cutoutUrl: await dataUrl(
-              path.join(output, item.artifacts.cutout),
-              "image/png",
-            ),
-          };
-        }),
-      );
-    return {
-      status: candidates.length ? "review_required" : "manual_fallback",
-      photoId,
-      confirmationRequired: true,
-      candidates,
-      latencyMs: Math.round(performance.now() - started),
-      inferenceMs: Math.round(
-        (report.timing_seconds?.inference_total || 0) * 1000,
-      ),
-      worker,
-      models: report.models,
-      localOnly: true,
-      productionEvidence: false,
-    };
-  } finally {
-    await rm(work, { recursive: true, force: true });
-  }
+/** Disabled until an independently validated in-memory detector is wired.
+ * The historical research worker writes images and is not a safe runtime. */
+export async function runCvAutoLocal({ signal } = {}) {
+  if (signal?.aborted) throw new Error("cancelled");
+  throw Object.assign(new Error("photo_safety_unavailable"), { status: 503 });
 }
 
 export function createCvAutoMiddleware({
