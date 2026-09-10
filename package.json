@@ -20,7 +20,9 @@
     "repo:check": "node scripts/check-repository-boundary.mjs",
     "bundle:check": "node scripts/check-bundle-budget.mjs",
     "verify": "npm run repo:check && npm run format:check && npm test && npm run build && npm run bundle:check",
-    "format:check": "prettier --check package.json vite.config.js playwright.config.js server/authBff.mjs src/AuthBffServer.test.js src/bootstrap.jsx src/BootstrapBoundary.test.js scripts/check-bundle-budget.mjs e2e .github/**/*.yml"
+    "format:check": "prettier --check package.json vite.config.js playwright.config.js server/authBff.mjs src/AuthBffServer.test.js src/bootstrap.jsx src/BootstrapBoundary.test.js scripts/check-bundle-budget.mjs e2e .github/**/*.yml",
+    "build:demo": "vite build --config vite.demo.config.js && node scripts/check-demo.mjs",
+    "preview:demo": "vite preview --config vite.demo.config.js"
   },
   "dependencies": {
     "@vitejs/plugin-react": "6.0.4",
