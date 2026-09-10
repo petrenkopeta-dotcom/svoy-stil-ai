@@ -11,7 +11,7 @@ export const COLOR_COMPARISONS = [
 
 export function ColorComparisonStep({ answers, update }) {
   return <fieldset className="choice color-comparison" role="radiogroup" aria-labelledby="onboarding-04-label" aria-describedby="onboarding-04-description">
-    <legend className="choice-legend"><span className="num" aria-hidden="true">04</span><span className="choice-title" id="onboarding-04-label">Какое сочетание вам ближе?</span></legend>
+    <legend className="choice-legend"><span className="num" aria-hidden="true">03</span><span className="choice-title" id="onboarding-04-label">Какое сочетание вам ближе?</span></legend>
     <p className="choice-description" id="onboarding-04-description">Смотрите на свотчи, а не на названия. Это не определяет цветотип — только помогает начать.</p>
     <div className="color-pair-grid">{COLOR_COMPARISONS.map((option, index) => {
       const selected = answers.colorComparison === option.label;

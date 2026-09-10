@@ -12,6 +12,7 @@ export function OnboardingWizard({ preferences, onComplete, onStepCompleted }) {
   const storage = globalThis.sessionStorage;
   const [state, setState] = useState(() => loadWizardState(storage, preferences));
   const Step = STEPS[state.step];
+  useEffect(() => { document.getElementById("wizard-title")?.focus(); }, [state.step]);
   useEffect(() => saveWizardState(state, storage), [state, storage]);
   const update = (patch) => setState((current) => ({ ...current, answers: { ...current.answers, ...patch } }));
   const complete = () => {
@@ -29,7 +30,7 @@ export function OnboardingWizard({ preferences, onComplete, onStepCompleted }) {
       <button type="button" aria-label="Вернуться к предыдущему шагу" disabled={state.step === 0} onClick={() => setState({ ...state, step: state.step - 1 })}><ArrowLeft size={18} aria-hidden="true" /> Назад</button>
       {state.step < ONBOARDING_STEP_COUNT - 1
         ? <button type="button" className="primary" disabled={!isWizardStepComplete(state.step, state)} onClick={() => { onStepCompleted?.(state.step + 1); setState({ ...state, step: state.step + 1 }); }}>Дальше <ArrowRight size={18} aria-hidden="true" /></button>
-        : <button type="button" className="primary" disabled={!isWizardStepComplete(state.step, state)} onClick={complete}>Продолжить <ArrowRight size={18} aria-hidden="true" /></button>}
+        : <button type="button" className="primary" disabled={!isWizardStepComplete(state.step, state)} onClick={complete}>Показать мой демо-образ <ArrowRight size={18} aria-hidden="true" /></button>}
     </footer>
     {!isWizardStepComplete(state.step, state) && <p className="wizard-required" role="status">Выберите один вариант, чтобы продолжить.</p>}
   </section>;
