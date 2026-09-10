@@ -26,6 +26,7 @@ None was copied or published.
 | `src/localCvAuto.js` | Client CV transport | Reject missing safety, pre-cancelled calls; 20s deadline; distinct timeout |
 | `src/photoStorage.js` | Local persistence | Reject unvalidated images, including legacy migration |
 | `src/main.jsx` | Reference saving | Remove original rectangular crop fallback |
+| `src/referenceDraft.js`, `ReferenceExperience.jsx` | Reference draft held original in IndexedDB | Memory-only drafts, release on close/error; existing historical browser records are not automatically deleted |
 | `server/authBff.mjs` | Legacy external provider BFF | Require exact-byte validator; wire durable SQLite and portable CLI entry |
 | `server/vkAuth.mjs`, `stagingApi.mjs` | New server contract | Signed VK identity and owner-keyed metadata; photos denied |
 | `server/budgetGuard.mjs` | Budget policy, latch and outbox | Default blocked; no real billing/controller transport configured |
@@ -38,12 +39,14 @@ None was copied or published.
 |---|---|---|
 | P0 | Original written to temp disk → processing disabled | Negative test proves old worker not called. Actual safe inference still required |
 | P0 | Missing detector accepted → safety and storage fail closed | Missing/incomplete/error/cancel/timeout tests; actual pixel detector still missing |
+| P0 | Reference draft wrote original to IndexedDB → memory-only backend | Test proves IndexedDB is never opened; durable backend injection rejected; historical records require a separately authorized cleanup decision |
 | P0 | BFF could forward arbitrary crop → server validator required | Test accepted fixture separately; default validator absent, upload blocked |
 | P0 | Russian hosting / independent operation absent | Requires selected Russian account, TLS, private tester access, approved spend and phone test with laptop off |
 | P0 | Budget could overrun → reserve policy + durable default block | Unit tests of reserves/stale data/calendar latch/two channels. Provider ingestion/shutdown and top-up resume not implemented |
 | P1 | VK and durable owner separation absent → isolated API contract | HMAC tamper/app/expiry tests, two-user SQL isolation, restart/expiry sessions. Frontend/VK installation and real launch still required |
 | P1 | Windows-only BFF entry/session wiring → file URL + SQLite | Local tests; Linux CI must pass on exact PR head |
 | P1 | Formatting failure | All 14 baseline LF files pass Prettier directly from Git. CRLF worktree caused failure; `.gitattributes` pins LF |
+| P1 | Nested persistence tests omitted | Recursive test runner includes all src/server test files; 479 tests now pass locally |
 | P1 | 10s goal / 20s maximum unmeasured | Deadline is enforced for browser transport; no cold/warm or load evidence for real inference |
 | P1 | Legal readiness unknown | Separate qualified review of operator, consent, notices, retention and data-processing chain required |
 

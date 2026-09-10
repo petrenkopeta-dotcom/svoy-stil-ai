@@ -1,5 +1,44 @@
 import { test, expect } from "@playwright/test";
 
+test("original photo drafts stay in memory and unverified photo saving is blocked", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const result = await page.evaluate(async () => {
+    const { createReferenceDraftStore } =
+      await import("/src/referenceDraft.js");
+    const { createPhotoStorage, PHOTO_POLICY_VERSION } =
+      await import("/src/photoStorage.js");
+    const original = new Blob(["synthetic-no-user-photo"], {
+      type: "image/png",
+    });
+    const draft = createReferenceDraftStore();
+    await draft.save({ dto: { blob: original, networkAllowed: false } });
+    const restored = Boolean((await draft.load())?.dto?.blob);
+    let code;
+    try {
+      await createPhotoStorage().save(original, {
+        granted: true,
+        policyVersion: PHOTO_POLICY_VERSION,
+      });
+    } catch (error) {
+      code = error.code;
+    }
+    await draft.clear();
+    return {
+      restored,
+      code,
+      cleared: (await draft.load()) === null,
+      databases: (await indexedDB.databases()).map((db) => db.name),
+    };
+  });
+  expect(result.restored).toBe(true);
+  expect(result.cleared).toBe(true);
+  expect(result.code).toBe("unsafe_photo");
+  expect(result.databases).not.toContain("ai-stylist-reference-draft");
+  expect(result.databases).not.toContain("ai-stylist-photos");
+});
+
 test("three answers reveal the first demo look without a tour blocking it", async ({
   page,
 }) => {
