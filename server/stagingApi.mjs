@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { verifyVkLaunch } from "./vkAuth.mjs";
 
 /** Separate Russian backend contract. No Supabase or external photo forwarding. */
-export function createStagingApi({ db, sessions, origin, secret, appId, now = Date.now, budgetAllowed = () => false }) {
+export function createStagingApi({ db, sessions, origin, secret, appId, now = Date.now, budgetAllowed = () => false, photoFlow }) {
   if (sessions?.durable !== true || !origin?.startsWith("https://")) throw new Error("staging_configuration_required");
   db.exec("CREATE TABLE IF NOT EXISTS staging_wardrobe (owner TEXT PRIMARY KEY, value TEXT NOT NULL)");
   const reply = (status, value, headers = {}) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", ...headers } });
@@ -22,9 +22,30 @@ export function createStagingApi({ db, sessions, origin, secret, appId, now = Da
       const id = request.headers.get("cookie")?.split(";").map((x) => x.trim()).find((x) => x.startsWith("stylist_vk="))?.slice(11);
       const session = id && await sessions.get(id);
       if (!session || session.expiresAt * 1000 <= now()) return reply(401, { code: "session_required" });
+      if (url.pathname === "/api/staging/session" && request.method === "GET") return reply(200, { authenticated: true });
       if (url.pathname === "/api/staging/logout" && request.method === "POST") {
+        photoFlow?.cancel(session.userId);
         await sessions.delete(id);
         return reply(200, { signedOut: true }, { "Set-Cookie": "stylist_vk=; Path=/api/staging; HttpOnly; Secure; SameSite=None; Max-Age=0" });
+      }
+      if (url.pathname.startsWith("/api/staging/photos")) {
+        if (photoFlow?.enabled() !== true) return reply(503, { code: "photo_release_unapproved" });
+        if (url.pathname === "/api/staging/photos/analyze" && request.method === "POST") {
+          const bytes = Buffer.from(await request.arrayBuffer());
+          if (!bytes.length || bytes.length > 10 * 1024 * 1024) return reply(413, { code: "image_bytes_limit" });
+          return reply(200, { candidates: await photoFlow.analyze(session.userId, bytes, { signal: request.signal }) });
+        }
+        if (url.pathname === "/api/staging/photos/confirm" && request.method === "POST") {
+          const value = await request.json();
+          if (Object.keys(value).length !== 1 || typeof value.id !== "string") return reply(400, { code: "candidate_required" });
+          return reply(200, await photoFlow.confirm(session.userId, value.id, { signal: request.signal }));
+        }
+        const match = url.pathname.match(/^\/api\/staging\/photos\/([a-f0-9-]{36})$/);
+        if (match && request.method === "GET") {
+          const saved = photoFlow.read(session.userId, match[1]);
+          return new Response(saved.bytes, { headers: { "Content-Type": "image/png", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+        }
+        return reply(404, { code: "route_unavailable" });
       }
       if (url.pathname === "/api/staging/wardrobe" && request.method === "GET") {
         const row = db.prepare("SELECT value FROM staging_wardrobe WHERE owner=?").get(session.userId);
