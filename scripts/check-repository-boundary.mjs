@@ -8,7 +8,18 @@ const blockedRoots = [
   "docs/audit/",
 ];
 const blockedNames = new Set([".env", ".env.local", "id_rsa", "id_ed25519"]);
-const blockedExtensions = [".pem", ".p12", ".pfx", ".key"];
+const blockedExtensions = [
+  ".pem",
+  ".p12",
+  ".pfx",
+  ".key",
+  ".sqlite",
+  ".sqlite-wal",
+  ".sqlite-shm",
+  ".db",
+  ".db-wal",
+  ".db-shm",
+];
 const allowedReviewDocs = new Set([
   "docs/eval-metrics.md",
   "docs/stylist-reasoning-qa-v1.md",

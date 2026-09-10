@@ -29,6 +29,11 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 /.cv-auto-runtime/
+# Durable server state contains credentials and private wardrobe metadata.
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
 
 # Browser profiles and browser-owned data
 **/edge-profile/
