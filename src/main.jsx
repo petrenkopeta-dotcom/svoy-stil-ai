@@ -596,7 +596,7 @@ export function App() {
                 rememberPreferences: consent,
               });
               setOnboardingComplete(true);
-              setTourOpen(shouldShowProductTour());
+              setTourOpen(false);
             }}
           />
         )}{" "}
@@ -1045,18 +1045,18 @@ function Landing({ onStart }) {
           Образ на день —<br />
           <i>уже в твоём шкафу</i>
         </h1>
-        <p>AI-стилист соберёт сочетание из вещей, которые у тебя уже есть — под планы, настроение и погоду.</p>
+        <p>Начни с трёх простых ответов — и посмотри пример образа под свои планы. Затем добавь свои вещи, чтобы собирать сочетания из личного гардероба.</p>
         <button className="primary" onClick={onStart}>
           Начать подбор <ArrowRight size={18} />
         </button>
         <div className="minute">
-          <Clock size={15} /> Тест займёт всего 1 минуту
+          <Clock size={15} /> 3 вопроса · без регистрации и фотографий
         </div>
       </div>
       <div className="hero-photo">
         <img src="/assets/editorial-look.png" alt="Пример образа из демо-гардероба" />
         <span className="look-tag">
-          <b>Образ на сегодня</b> smart casual · подобрано по твоим настройкам
+          <b>Пример образа</b> smart casual · демо-гардероб
         </span>
       </div>
       <div className="hero-index">
