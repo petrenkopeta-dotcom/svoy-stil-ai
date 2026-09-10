@@ -1,0 +1,27 @@
+[Unit]
+Description=AI stylist closed staging gate
+After=network.target
+
+[Service]
+Type=simple
+User=stylist
+Group=stylist
+WorkingDirectory=/opt/stylist
+EnvironmentFile=/etc/stylist/staging.env
+ExecStart=/usr/bin/node /opt/stylist/server/stagingServer.mjs
+Restart=no
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/stylist
+LimitCORE=0
+MemorySwapMax=0
+MemoryMax=1G
+TasksMax=64
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target
