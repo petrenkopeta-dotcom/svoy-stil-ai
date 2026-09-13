@@ -8,18 +8,40 @@ User=stylist
 Group=stylist
 WorkingDirectory=/opt/stylist
 EnvironmentFile=/etc/stylist/staging.env
-ExecStart=/usr/bin/node /opt/stylist/server/stagingServer.mjs
+ExecStart=/usr/bin/node /opt/stylist/scripts/server-start.mjs
 Restart=no
 UMask=0077
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
 PrivateTmp=true
+TemporaryFileSystem=/tmp:rw,nosuid,nodev,noexec,size=64M
+TemporaryFileSystem=/var/tmp:rw,nosuid,nodev,noexec,size=16M
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+KillMode=control-group
+TimeoutStopSec=5s
 ReadWritePaths=/var/lib/stylist
 LimitCORE=0
 MemorySwapMax=0
 MemoryMax=1G
 TasksMax=64
+Environment=NODE_ENV=production
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=HF_HUB_OFFLINE=1
+Environment=TRANSFORMERS_OFFLINE=1
 StandardOutput=null
 StandardError=null
 

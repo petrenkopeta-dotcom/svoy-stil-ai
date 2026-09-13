@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   cv-contract:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -26,7 +26,7 @@ jobs:
       - run: python -m pip install -r runtime/cv/requirements-test.txt
       - run: python -B -m unittest discover -s runtime/cv -p 'test_*.py'
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +34,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "24.17.0"
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm audit --omit=dev --audit-level=high
@@ -42,7 +42,7 @@ jobs:
 
   browser-smoke:
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +50,19 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "24.17.0"
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
+      - run: npx playwright test --config src/vkStagingClient.browser.config.js
+
+  linux-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # Builds/tests locally on the runner; no registry login, push or ML download.
+      - run: docker build --file deploy/server.Dockerfile --tag stylist-verification .

@@ -14,7 +14,7 @@ Profiling the algorithm also identified a real hot path in diversity selection: 
 
 ## Changes
 
-- Warm up once, then collect seven independent CPU-time samples and enforce nearest-rank p95 `<1500 ms`. CPU time excludes unrelated host scheduler pauses while retaining the same useful compute budget.
+- Warm up once, then collect 15 CPU-time samples and enforce nearest-rank p95 `<1500 ms`. For 15 samples this percentile is the maximum observation. These repeated calls are not proof of statistically independent measurements. CPU time excludes scheduler waiting, but does not remove JIT/GC or hardware/environment effects.
 - Compare the 30 ordered candidate signatures across all samples.
 - Cache candidate ID membership with `Set` and calculate overlap without temporary arrays. Ranking score, diversity penalty, tie-break, public output, and candidate generation are unchanged.
 
@@ -29,3 +29,20 @@ Post-change on the same date (one warm-up + 9 samples): CPU-time p50 **296 ms**,
 - `node --test src/stylistCandidateEngine.test.js`
 - `npm.cmd test`
 - `npm.cmd run build`
+
+## Integration follow-up, 2026-09-13
+
+The historical nine-sample measurements above remain historical evidence, not
+current integration results. Exact candidate cd0acb0 had an author full PASS but
+independent full 520/521 FAIL (p95 1610 ms, p50 828 ms). Isolated 8/8 PASS did not
+cancel that full failure. Earlier integration before security also recorded
+p95 1532 ms >1500. No cause for those outliers has been established.
+
+The next runner executes all ordinary test files with concurrency 2, waits for
+completion, then executes the entire stylistCandidateEngine.test.js file with
+concurrency 1. Both phases retain failures; missing or duplicate perf inclusion
+fails before spawning. Input, assertions, one warm-up, 15 samples and 1500 ms
+threshold are unchanged. Runner tests use an injected spawn function and do not
+execute the performance benchmark. This scheduling change is pending a single
+full combined regression and independent acceptance; performance is not declared
+fixed. Linux CI and production model SLO remain separate unverified gates.

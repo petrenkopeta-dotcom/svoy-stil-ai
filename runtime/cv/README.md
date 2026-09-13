@@ -1,8 +1,8 @@
 # Memory-only CV runtime
 
-The implemented path is bytes → Pillow decode → GroundingDINO garment boxes →
-SAM2 masks → stripped RGBA PNG → independent presence/semantic models on the
-**decoded PNG bytes** → SHA-256 proof. No input, masks, overlay or report file is
+The implemented path is bytes в†’ Pillow decode в†’ GroundingDINO garment boxes в†’
+SAM2 masks в†’ stripped RGBA PNG в†’ independent presence/semantic models on the
+**decoded PNG bytes** в†’ SHA-256 proof. No input, masks, overlay or report file is
 written. Transparency has zero hidden RGB. Original filenames/hashes are absent
 from protocol output. The JS supervisor admits one job, counts cold start inside
 the 20-second deadline, hard-kills hung work, and remains faulted until explicitly
@@ -24,22 +24,31 @@ The Node tests additionally kill a real hung OS process.
 model integration and all transitive versions still need validation on approved
 Russian infrastructure. Do not install it on the laptop automatically.
 
-For a future offline run provide `CV_MODEL_ROOT` and `CV_MODEL_MANIFEST` to the
-Python worker (or the corresponding JS constructor options). The manifest must
-contain `versions` with exact `torch` and `transformers` versions, `garment_labels`
-(a non-empty subset of GARMENTS), and `models` with four distinct roles:
-`generator_detector`, `generator_segmenter`, `verifier_presence`,
-`verifier_semantic`. Each role has a relative `directory` and `sha256` map for
-**every** file, including configs/tokenizer/processors and safetensors. Hashes
-must be verified from the selected sources; no fabricated checksums or automatic
-download is provided. Pickle weights and remote custom code are disabled.
+For a future authorized offline research run provide `CV_MODEL_ROOT` and
+`CV_MODEL_MANIFEST`. **Manifest v2 is required; old manifests fail closed and
+must be recreated after review, not silently migrated.** See
+[CV-MODEL-READINESS](../../docs/CV-MODEL-READINESS.md) for exact fields, pinned
+revisions, licenses, API evidence and the real benchmark protocol.
 
-The presence model must include both `person` and `face` classes. The independent
-semantic model must be trained for the configured clothing labels. A generic
-COCO model lacking a face class or a scene model lacking garment labels is
-rejected. Every visible pixel must satisfy garment probability ≥0.995 on black
-and white composites. This conservative model policy has **not** been calibrated
-or validated and is not a guarantee of safe classification.
+`model-selection.json` is a research shortlist, NOT a loadable manifest. It
+contains verified repository revisions but deliberately no invented weight
+hashes. Every local snapshot file must have a real SHA256 in the deployment
+manifest. Pickle weights, Python handlers, remote custom code, symlinks and
+junctions are rejected. Missing/mismatched model parameters fail loading.
+Model directories must be immutable/read-only during inference.
+
+Research adapters now use GroundingDINO tiny + SAM2.1 tiny for proposals,
+separate OWLv2 fixed person/face text queries and ATR SegFormer B2 for verification.
+Queries do not prove face recall. ATR taxonomy is checked exactly; upper-clothes
+and left/right-shoe map to garment categories without admitting body/background.
+This does not prove the generator's product subtype. Every visible pixel must
+still satisfy garment probability >=0.995 on black AND white composites.
+These thresholds are uncalibrated. **The selected SegFormer card links a
+research/evaluation-only license: commercial release remains NO-GO.**
+
+The adapters run on CPU/FP32; no hardware, latency or memory result is claimed.
+The exact top-level dependency versions are checked; a complete platform-specific
+transitive wheel lock and actual model-load evidence are still outstanding.
 
 Outputs always say `productionApproved: false`. `garmentPhotoFlow.mjs` has a
 separate default-deny release predicate. An authenticated owner can only confirm
