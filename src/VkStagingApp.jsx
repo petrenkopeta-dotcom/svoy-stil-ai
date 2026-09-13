@@ -18,7 +18,8 @@ export function VkStagingApp() {
   const [message, setMessage] = useState("");
   const generation = useRef(0),
     urls = useRef(new Set()),
-    operation = useRef();
+    operation = useRef(),
+    logoutPending = useRef(false);
   const clearPhotos = () => {
     for (const url of urls.current) URL.revokeObjectURL(url);
     urls.current.clear();
@@ -248,21 +249,29 @@ export function VkStagingApp() {
           </button>
           <button
             disabled={state === "logout"}
-            onClick={() => {
-              generation.current++;
-              clearPhotos();
-              setItems([]);
-              setCandidates([]);
-              setEnabled(false);
-              run("logout", async (active) => {
-                await client.logout();
-                if (active()) {
-                  setSignedIn(false);
-                  setState("signedOut");
-                  setMessage("Вы вышли. Личный гардероб скрыт.");
-                  client.close();
-                }
-              });
+            onClick={async () => {
+              // Claim logout before advancing generation: two synchronous clicks
+              // must not each become a new operation ahead of React's render.
+              if (logoutPending.current) return;
+              logoutPending.current = true;
+              try {
+                generation.current++;
+                clearPhotos();
+                setItems([]);
+                setCandidates([]);
+                setEnabled(false);
+                await run("logout", async (active) => {
+                  await client.logout();
+                  if (active()) {
+                    setSignedIn(false);
+                    setState("signedOut");
+                    setMessage("Вы вышли. Личный гардероб скрыт.");
+                    client.close();
+                  }
+                });
+              } finally {
+                logoutPending.current = false;
+              }
             }}
           >
             Выйти
