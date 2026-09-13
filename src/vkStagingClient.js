@@ -1,35 +1,146 @@
-/** Same-origin VK metadata client. Launch credentials stay in memory. */
-export function createVkStagingClient({ fetchImpl = globalThis.fetch, launch = "" } = {}) {
-  let pending = new Set();
-  const request = async (route, method = "GET", body) => {
+/** Same-origin VK client. Credentials and image bytes stay in memory. */
+export function createVkStagingClient({
+  fetchImpl = globalThis.fetch,
+  launch = "",
+  timeoutMs = 20_000,
+} = {}) {
+  const pending = new Set();
+  let closed = false;
+  const fail = (code, status) =>
+    Object.assign(new Error(code), { code, status });
+  const request = async (route, method = "GET", body, binary = false) => {
+    if (closed) throw fail("client_closed");
     const controller = new AbortController();
     pending.add(controller);
-    const timer = setTimeout(() => controller.abort(), 10_000);
+    let timedOut = false;
+    const timer = setTimeout(
+      () => {
+        timedOut = true;
+        controller.abort();
+      },
+      Math.min(timeoutMs, 20_000),
+    );
     try {
       const response = await fetchImpl(`/api/staging/${route}`, {
-        method, credentials: "same-origin", cache: "no-store", signal: controller.signal,
-        headers: { "X-CSRF-Intent": "ai-stylist", "Content-Type": "text/plain" }, body,
+        method,
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller.signal,
+        headers: {
+          "X-CSRF-Intent": "ai-stylist",
+          "Content-Type": "text/plain",
+        },
+        body,
       });
-      if (!response.ok) throw Object.assign(new Error("staging_request_failed"), { status: response.status });
-      return await response.json();
-    } finally { clearTimeout(timer); pending.delete(controller); }
+      if (!response.ok) {
+        const value = await response.json().catch(() => ({}));
+        throw fail(value.code || "staging_request_failed", response.status);
+      }
+      const value = binary
+        ? await response.arrayBuffer()
+        : await response.json();
+      if (controller.signal.aborted || closed) throw fail("request_cancelled");
+      return value;
+    } catch (error) {
+      if (timedOut) throw fail("request_timeout", 408);
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      pending.delete(controller);
+    }
+  };
+  const readPhoto = async ({ id, sha256 }) => {
+    if (!/^[a-f0-9-]{36}$/.test(id) || !/^[a-f0-9]{64}$/.test(sha256))
+      throw fail("photo_contract_invalid");
+    const bytes = await request(`photos/${id}`, "GET", undefined, true);
+    const digest = [
+      ...new Uint8Array(
+        await globalThis.crypto.subtle.digest("SHA-256", bytes),
+      ),
+    ]
+      .map((x) => x.toString(16).padStart(2, "0"))
+      .join("");
+    if (digest !== sha256) throw fail("photo_readback_mismatch");
+    return { id, sha256, blob: new Blob([bytes], { type: "image/png" }) };
   };
   return Object.freeze({
     async login() {
-      // Session restoration works after the launch query has been removed.
       if (!launch) return request("session");
-      const result = await request("vk-session", "POST", launch);
+      const credentials = launch;
       launch = "";
-      return result;
+      return request("vk-session", "POST", credentials);
     },
     wardrobe: () => request("wardrobe"),
+    capabilities: () => request("capabilities"),
+    photos: () => request("photos"),
+    async analyze(file) {
+      // Recheck server admission before reading or transmitting any input bytes.
+      if ((await request("capabilities")).photos !== true)
+        throw fail("photo_release_unapproved", 503);
+      if (
+        !(file instanceof Blob) ||
+        !file.size ||
+        file.size > 10 * 1024 * 1024 ||
+        !["image/png", "image/jpeg", "image/webp"].includes(file.type)
+      )
+        throw fail("image_bytes_limit", 413);
+      return request("photos/analyze", "POST", file);
+    },
+    async confirm(id) {
+      const saved = await request(
+        "photos/confirm",
+        "POST",
+        JSON.stringify({ id }),
+      );
+      return readPhoto(saved);
+    },
+    readPhoto,
     async save(items) {
       await request("wardrobe", "PUT", JSON.stringify(items));
       const readBack = await request("wardrobe");
-      if (JSON.stringify(readBack.items) !== JSON.stringify(items)) throw new Error("staging_readback_mismatch");
+      if (JSON.stringify(readBack.items) !== JSON.stringify(items))
+        throw fail("staging_readback_mismatch");
       return readBack;
     },
-    logout: () => request("logout", "POST", ""),
-    close() { for (const controller of pending) controller.abort(); pending = new Set(); launch = ""; },
+    async logout() {
+      for (const controller of pending) controller.abort();
+      return request("logout", "POST", "");
+    },
+    close() {
+      closed = true;
+      for (const controller of pending) controller.abort();
+      launch = "";
+    },
   });
+}
+
+export function vkJourneyError(error) {
+  if (error.status === 401)
+    return {
+      state: "error",
+      message: "Сессия завершена. Откройте приложение заново из VK.",
+    };
+  if ([408, 504].includes(error.status))
+    return {
+      state: "timeout",
+      message:
+        "Время ожидания истекло. Результат не подтверждён; обновите гардероб перед повтором.",
+    };
+  if (error.status === 503)
+    return {
+      state: "unavailable",
+      message:
+        "Обработка фото пока недоступна. Проверки безопасности или бюджета не завершены.",
+    };
+  if ([404, 410].includes(error.status))
+    return {
+      state: "error",
+      message:
+        "Кандидат или вещь недоступны. Обновите гардероб или выполните анализ заново.",
+    };
+  return {
+    state: "error",
+    message:
+      "Операция не подтверждена. Проверьте связь и обновите гардероб перед повтором.",
+  };
 }
