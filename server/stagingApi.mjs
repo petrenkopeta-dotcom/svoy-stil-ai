@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { verifyVkLaunch } from "./vkAuth.mjs";
+import { createVkProfileStore } from "./vkProfileStore.mjs";
+import { PROFILE_MAX_BYTES } from "../src/vkProfileContract.js";
 
 const validWardrobe = (items) =>
   Array.isArray(items) &&
@@ -37,7 +39,9 @@ export function createStagingApi({
   now = Date.now,
   budgetAllowed = () => false,
   photoFlow,
+  profileAllowed = () => false,
 }) {
+  let profileStore;
   if (sessions?.durable !== true || !origin?.startsWith("https://"))
     throw new Error("staging_configuration_required");
   db.exec(
@@ -110,11 +114,38 @@ export function createStagingApi({
         return reply(401, { code: "session_required" });
       if (url.pathname === "/api/staging/session" && request.method === "GET")
         return reply(200, { authenticated: true });
+      if (url.pathname === "/api/staging/profile") {
+        if (profileAllowed() !== true)
+          return reply(503, { code: "profile_release_unapproved" });
+        if (!["GET", "PUT"].includes(request.method))
+          return reply(404, { code: "route_unavailable" });
+        // Lazy creation only after authenticated explicit admission; never on normal startup.
+        profileStore ??= await stored(() =>
+          createVkProfileStore({ db, enabled: true, now }),
+        );
+        let result;
+        if (request.method === "GET")
+          result = profileStore.read(session.userId);
+        else {
+          const raw = await request.text();
+          if (new TextEncoder().encode(raw).length > PROFILE_MAX_BYTES)
+            return reply(413, { code: "request_too_large" });
+          result = profileStore.write(
+            session.userId,
+            JSON.parse(raw),
+            request.headers.get("if-match"),
+          );
+        }
+        return reply(200, { profile: result.profile }, { ETag: result.etag });
+      }
       if (
         url.pathname === "/api/staging/capabilities" &&
         request.method === "GET"
       )
-        return reply(200, { photos: photoFlow?.enabled() === true });
+        return reply(200, {
+          photos: photoFlow?.enabled() === true,
+          ...(profileAllowed() === true ? { profiles: true } : {}),
+        });
       if (url.pathname === "/api/staging/logout" && request.method === "POST") {
         if ((await request.arrayBuffer()).byteLength > 16384)
           return reply(413, { code: "request_too_large" });
@@ -212,6 +243,12 @@ export function createStagingApi({
     } catch (error) {
       // Only allowlisted protocol errors leave the server; never worker diagnostics.
       const status = {
+        profile_release_unapproved: 503,
+        profile_precondition_required: 428,
+        profile_stale: 412,
+        profile_mutation_conflict: 409,
+        profile_receipts_full: 429,
+        invalid_profile: 422,
         storage_unavailable: 503,
         photo_release_unapproved: 503,
         photo_busy: 409,

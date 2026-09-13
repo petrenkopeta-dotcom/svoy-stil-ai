@@ -9,6 +9,7 @@ export function startStagingServer({
   env = process.env,
   budgetAllowed = () => false,
   photoFlow,
+  profileAllowed = () => false,
 } = {}) {
   if (
     !env.STAGING_DATA_DIR ||
@@ -34,6 +35,7 @@ export function startStagingServer({
       appId: env.VK_APP_ID,
       budgetAllowed,
       photoFlow,
+      profileAllowed,
     });
   } catch {
     sessions?.close();
@@ -72,6 +74,16 @@ export function startStagingServer({
           .end(JSON.stringify({ code: "staging_budget_blocked" }));
         return;
       }
+      if (request.url === "/api/staging/profile" && profileAllowed() !== true) {
+        response
+          .writeHead(503, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+            Connection: "close",
+          })
+          .end(JSON.stringify({ code: "profile_release_unapproved" }));
+        return;
+      }
       const photoRequest =
         (request.method === "GET" && request.url === "/api/staging/photos") ||
         /^\/api\/staging\/photos\/(analyze|confirm|[a-f0-9-]{36})$/.test(
@@ -97,7 +109,7 @@ export function startStagingServer({
       if (
         !photoRequest &&
         !capabilityRequest &&
-        !/^\/api\/staging\/(vk-session|session|wardrobe|logout)$/.test(
+        !/^\/api\/staging\/(vk-session|session|wardrobe|logout|profile)$/.test(
           request.url || "",
         )
       ) {

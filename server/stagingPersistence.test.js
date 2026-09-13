@@ -11,6 +11,8 @@ import path from "node:path";
 import { createHmac } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { startStagingServer } from "./stagingServer.mjs";
+import { randomUUID } from "node:crypto";
+import { emptyProfileDraft } from "../src/vkProfileContract.js";
 import {
   createVkStagingClient,
   vkJourneyError,
@@ -24,7 +26,7 @@ const signed = (user = "456", timestamp = Math.floor(Date.now() / 1000)) => {
   return `${raw}&sign=${createHmac("sha256", secret).update(raw).digest("base64url")}`;
 };
 
-async function fixture(t) {
+async function fixture(t, { profiles = false } = {}) {
   const dir = await mkdtemp(
     path.join(tmpdir(), "stylist-synthetic-persistence-"),
   );
@@ -58,7 +60,7 @@ async function fixture(t) {
     // Actual child process restart, no shared database handles or JS session state.
     const source = `
       import { startStagingServer } from ${JSON.stringify(new URL("./stagingServer.mjs", import.meta.url).href)};
-      const server = startStagingServer({ env: ${JSON.stringify(env)}, budgetAllowed: () => true });
+      const server = startStagingServer({ env: ${JSON.stringify(env)}, budgetAllowed: () => true, profileAllowed: () => ${profiles === true} });
       server.once("listening", () => process.send(server.address().port));
       process.once("message", () => server.close(() => process.disconnect()));
     `;
@@ -391,4 +393,164 @@ test("storage failure UI message describes wardrobe and requires readback", () =
   assert.equal(error.state, "unavailable");
   assert.match(error.message, /Хранилище гардероба/);
   assert.match(error.message, /не подтверждён/);
+});
+
+test("HTTP profile gate leaves schema absent; enabled profile survives real process restart and owner isolation", async (t) => {
+  const denied = await fixture(t),
+    cookie = await denied.login();
+  assert.equal((await denied.request("profile", { cookie })).status, 503);
+  assert.equal(
+    denied.edit(
+      "metadata.sqlite",
+      (db) =>
+        db
+          .prepare(
+            "SELECT count(*) n FROM sqlite_master WHERE name LIKE 'staging_profile%'",
+          )
+          .get().n,
+    ),
+    0,
+  );
+  const f = await fixture(t, { profiles: true });
+  const a = await f.login(),
+    b = await f.login(signed("789"));
+  assert.equal((await f.request("profile")).status, 401);
+  assert.deepEqual(await (await f.request("profile", { cookie: a })).json(), {
+    profile: null,
+  });
+  const mutation = {
+    ...emptyProfileDraft(),
+    city: { name: "Москва", region: "Москва", source: "manual" },
+    mutationId: randomUUID(),
+  };
+  const saved = await f.request("profile", {
+    cookie: a,
+    method: "PUT",
+    headers: { "If-Match": '"profile-0"' },
+    body: JSON.stringify(mutation),
+  });
+  assert.equal(saved.status, 200);
+  assert.equal(saved.headers.get("etag"), '"profile-1"');
+  const expected = await saved.json();
+  await f.stop();
+  await f.start();
+  assert.deepEqual(
+    await (await f.request("profile", { cookie: a })).json(),
+    expected,
+  );
+  assert.deepEqual(await (await f.request("profile", { cookie: b })).json(), {
+    profile: null,
+  });
+  assert.equal(
+    (await f.request("profile?owner=vk:123:456", { cookie: b })).status,
+    404,
+  );
+  assert.equal(
+    (
+      await f.request("profile", {
+        cookie: b,
+        method: "PUT",
+        headers: { "If-Match": '"profile-0"' },
+        body: JSON.stringify({ ...mutation, owner: "vk:123:456" }),
+      })
+    ).status,
+    422,
+  );
+  assert.equal(
+    (await f.request("logout", { cookie: a, method: "POST" })).status,
+    200,
+  );
+  assert.equal((await f.request("profile", { cookie: a })).status, 401);
+  assert.deepEqual(
+    await (await f.request("profile", { cookie: await f.login() })).json(),
+    expected,
+  );
+});
+
+test("HTTP two sessions CAS, lost acknowledgement dedup and changed mutation conflict preserve one revision", async (t) => {
+  const f = await fixture(t, { profiles: true }),
+    a = await f.login(),
+    second = await f.login();
+  const one = { ...emptyProfileDraft(), mutationId: randomUUID() },
+    two = { ...emptyProfileDraft(), mutationId: randomUUID() };
+  const put = (cookie, value, etag = '"profile-0"') =>
+    f.request("profile", {
+      cookie,
+      method: "PUT",
+      headers: { "If-Match": etag },
+      body: JSON.stringify(value),
+    });
+  const responses = await Promise.all([put(a, one), put(second, two)]);
+  assert.deepEqual(responses.map((r) => r.status).sort(), [200, 412]);
+  const winner = responses[0].status === 200 ? one : two;
+  await responses.find((r) => r.status === 200).arrayBuffer(); // Discard real successful acknowledgement.
+  await f.stop();
+  await f.start();
+  const retry = await put(a, winner);
+  assert.equal(retry.status, 200);
+  assert.equal((await retry.json()).profile.revision, 1);
+  assert.equal(
+    (
+      await put(a, {
+        ...winner,
+        city: { name: "Мирный", region: "Якутия", source: "manual" },
+      })
+    ).status,
+    409,
+  );
+  assert.equal(
+    f.edit(
+      "metadata.sqlite",
+      (db) =>
+        db.prepare("SELECT count(*) n FROM staging_profile_receipts").get().n,
+    ),
+    1,
+  );
+  const wardrobe = await f.request("wardrobe", { cookie: a });
+  assert.deepEqual(await wardrobe.json(), { items: [] });
+});
+
+test("HTTP profile bounds, CSRF and corrupt storage fail safely without changing wardrobe", async (t) => {
+  const f = await fixture(t, { profiles: true }),
+    cookie = await f.login();
+  const mutation = { ...emptyProfileDraft(), mutationId: randomUUID() };
+  const options = { cookie, method: "PUT", body: JSON.stringify(mutation) };
+  assert.equal((await f.request("profile", options)).status, 428);
+  assert.equal(
+    (
+      await f.request("profile", {
+        ...options,
+        headers: { Origin: "https://evil.test" },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await f.request("profile", {
+        ...options,
+        body: " ".repeat(16385),
+        headers: { "If-Match": '"profile-0"' },
+      })
+    ).status,
+    413,
+  );
+  assert.equal(
+    (
+      await f.request("profile", {
+        ...options,
+        headers: { "If-Match": '"profile-0"' },
+      })
+    ).status,
+    200,
+  );
+  f.edit("metadata.sqlite", (db) =>
+    db.exec("UPDATE staging_profiles SET value='{}'"),
+  );
+  const bad = await f.request("profile", { cookie });
+  assert.equal(bad.status, 503);
+  assert.deepEqual(await bad.json(), { code: "storage_unavailable" });
+  assert.deepEqual(await (await f.request("wardrobe", { cookie })).json(), {
+    items: [],
+  });
 });
