@@ -111,6 +111,9 @@ export function createVkStagingClient({
       return readPhoto(saved);
     },
     readPhoto,
+    cancel() {
+      for (const controller of pending) controller.abort();
+    },
     async save(items) {
       await request("wardrobe", "PUT", JSON.stringify(items));
       const readBack = await request("wardrobe");

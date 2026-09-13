@@ -1,3 +1,4 @@
+import { openVkAdd } from "../e2e/vkJourney.helpers.js";
 import { test, expect } from "@playwright/test";
 import { createHash } from "node:crypto";
 // Fixed synthetic pixel; never load a user's filesystem image or enable a server gate.
@@ -63,12 +64,14 @@ test("synthetic photo UI distinguishes empty, timeout, confirmation, read-back, 
   const status = page.getByRole("status");
   await expect(status).toHaveAttribute("data-state", "empty");
   expect(new URL(page.url()).search).toBe("");
-  const upload = () =>
-    page.locator('input[type="file"]').setInputFiles({
+  const upload = async () => {
+    await openVkAdd(page);
+    return page.locator('input[type="file"]').setInputFiles({
       name: "synthetic.png",
       mimeType: "image/png",
       buffer: png,
     });
+  };
   await upload();
   await expect(status).toContainText("не найдена");
   mode = "timeout";
@@ -94,6 +97,7 @@ test("denied capability has no upload control", async ({ page }) => {
   );
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveAttribute("data-state", "empty");
+  await openVkAdd(page);
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
 });
 
@@ -201,6 +205,7 @@ test("double confirmation sends one request; a lost response recovers by refresh
   });
   try {
     await page.goto("/");
+    await openVkAdd(page);
     await page.locator('input[type="file"]').setInputFiles({
       name: "synthetic.png",
       mimeType: "image/png",
@@ -273,6 +278,7 @@ for (const exit of ["logout", "leave"])
     try {
       await page.goto("/");
       const started = page.waitForRequest("**/photos/analyze");
+      await openVkAdd(page);
       await page.locator('input[type="file"]').setInputFiles({
         name: "synthetic.png",
         mimeType: "image/png",
@@ -406,6 +412,7 @@ test("logout interrupts confirmation and ignores its late saved response", async
   });
   try {
     await page.goto("/");
+    await openVkAdd(page);
     await page.locator('input[type="file"]').setInputFiles({
       name: "synthetic.png",
       mimeType: "image/png",

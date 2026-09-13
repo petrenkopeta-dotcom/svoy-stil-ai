@@ -1,3 +1,4 @@
+import { openVkAdd } from "./vkJourney.helpers.js";
 import { test, expect } from "@playwright/test";
 import { createHash } from "node:crypto";
 
@@ -50,6 +51,8 @@ test("security followup: synchronous double confirm preserves one successful res
   });
   try {
     await page.goto("/");
+    await openVkAdd(page);
+    await openVkAdd(page);
     await page.locator('input[type="file"]').setInputFiles({
       name: "synthetic.png",
       mimeType: "image/png",
