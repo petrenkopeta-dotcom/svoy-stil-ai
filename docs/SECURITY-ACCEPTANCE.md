@@ -293,3 +293,40 @@ MERGE-review followup: **HOLD по SEC-02**, без общего утвержд�
 дефектов. DEPLOY-NO-GO и прежние Linux/container/perf/model/provider ограничения
 сохраняются. Следующий короткий regression — только на разрешённом новом SHA:
 double logout плюс priority/logout-cancellation; текущие failures не стирать.
+
+## SEC-02 fix 2dfa1bd — VERIFIED в focused scope
+
+По заранее данному разрешению координатора и после явного CPU handoff от
+владельца VK проверен точный
+`2dfa1bd4e1ca22c4a9adda315222c6d81874092e`, родительa452a9a.
+Git diff:3 файла (UI, browser tests, VK doc); единственное production-изменение —
+`src/VkStagingApp.jsx`. Server/API, client, CI, budget/release gates не менялись.
+Синхронный `logoutPending` проверяется и выставляется до generation++, снимается
+в finally. Допуск logout к прерыванию текущего analysis/confirm сохранён.
+
+Exact archive/server cwd:
+`C:/Users/petre/.codex/worktrees/cc12/AI-стилист 2/artifacts/security-vk-2dfa1bd`.
+Свой Vite4297 strictPort. `server/vkRetry.security.test.js` скопирован в архив
+для Node-прогона; production архива не редактировался.
+
+- Focused Node: `node --test` для vkRetry.security, vkStagingClient.test и
+  garmentPhotoFlow.test из архива — **15/15 PASS, exit0**.
+- Один focused browser через ignored
+  `artifacts/vk-sec02-fix-browser.config.mjs` — **10/10 PASS, exit0,26.6с**.
+  Это4 прежних security,1 неизменённый независимый SEC-02 из5e8c734 и5 logout
+  lifecycle проверок владельца, самостоятельно запущенных на exact UI.
+  Test directories явно ограничены; дублей discovery в этом прогоне нет.
+- SEC-02: двойной синхронный logout вызывает один POST и завершает signedOut.
+  Ошибка первого logout допускает последующий retry; два клика retry снова дают
+  один запрос. Logout прерывает analysis и confirm, поздние ответы не возвращают
+  изображения/подтверждение; уход со страницы не восстанавливает UI.
+- Четыре существующих storage/ошибки/capability-deny security assertions PASS.
+  Assertions не ослаблялись; исходный a452 FAIL остаётся в предыдущем разделе и
+  `artifacts/vk-followup-a452a9a-browser.txt`. Новое evidence:
+  `artifacts/vk-sec02-2dfa1bd-browser.txt`.
+
+**SEC-02 VERIFIED только для2dfa1bd в указанной области.** Сервер остановлен,
+CPU FREE сообщён координатору и интегратору. Новый полный/perf регресс не
+проводился. Исправление пригодно к интеграции с regression5e8c734; готовность
+нового combined SHA этой проверкой не установлена. Предыдущие full-run perf
+отказы, Linux/container CI и все DEPLOY-NO-GO ограничения не сняты.
