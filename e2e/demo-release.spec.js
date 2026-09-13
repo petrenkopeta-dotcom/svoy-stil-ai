@@ -48,6 +48,29 @@ async function fit(page) {
     expect(box.height).toBeGreaterThanOrEqual(48);
   }
 }
+async function cardLinks(page) {
+  for (const link of await page.locator(".item-card .card-link").all()) {
+    await expect(link).not.toContainText("↗");
+    const icon = link.locator("svg");
+    await expect(icon).toHaveAttribute("aria-hidden", "true");
+    await expect(icon.locator("path")).toHaveAttribute(
+      "stroke",
+      "currentColor",
+    );
+    const labelBox = await link.locator("span").boundingBox();
+    const iconBox = await icon.boundingBox();
+    const linkBox = await link.boundingBox();
+    expect(iconBox.x).toBeGreaterThanOrEqual(labelBox.x + labelBox.width);
+    expect(iconBox.x + iconBox.width).toBeLessThanOrEqual(
+      linkBox.x + linkBox.width + 1,
+    );
+    expect(
+      Math.abs(
+        iconBox.y + iconBox.height / 2 - (labelBox.y + labelBox.height / 2),
+      ),
+    ).toBeLessThan(1);
+  }
+}
 async function onboard(page) {
   await page
     .getByRole("button", { name: "Перейти к вопросам", exact: true })
@@ -69,7 +92,7 @@ async function onboard(page) {
     await next.click();
   }
 }
-for (const width of [320, 390, 1280]) {
+for (const width of [320, 390, 393, 1280]) {
   test(`B1.3 demo journey, privacy and layout at ${width}px`, async ({
     page,
     baseURL,
@@ -103,6 +126,7 @@ for (const width of [320, 390, 1280]) {
     await expect(
       page.getByRole("region", { name: "Готовые примеры" }).getByRole("button"),
     ).toHaveCount(4);
+    await cardLinks(page);
     await fit(page);
     await page.screenshot({
       path: testInfo.outputPath(`wardrobe-${width}.png`),
@@ -181,12 +205,22 @@ for (const width of [320, 390, 1280]) {
     await expect(page.getByRole("status")).toContainText(
       "На сервер ничего не сохранено",
     );
+    await expect(
+      page.getByRole("heading", { name: "Рубашка", exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("Цвет: Белый", { exact: true })).toBeVisible();
+    await expect(page.locator("main h2")).not.toContainText("белый");
     await page
       .getByRole("button", { name: "Назад в гардероб", exact: true })
       .click();
     await expect(
       page.getByRole("region", { name: "Пробные записи" }).getByRole("button"),
     ).toHaveCount(1);
+    const trial = page
+      .getByRole("region", { name: "Пробные записи" })
+      .getByRole("button");
+    await expect(trial.locator(".item-name")).toHaveText("Рубашка");
+    await expect(trial.locator(".muted")).toHaveText("Цвет: Белый");
     await expect(
       page.getByRole("heading", { name: "Собственных вещей — 0" }),
     ).toBeVisible();
@@ -264,3 +298,59 @@ test("keyboard radio navigation, back preserves answers, focus and enlarged text
   await fit(page);
   await assertPrivacy(baseURL);
 });
+
+for (const [height, textScale] of [
+  [720, 1],
+  [600, 1],
+  [600, 2],
+]) {
+  test(`mobile entry and item remain reachable at 393x${height}, text ${textScale * 100}%`, async ({
+    page,
+    baseURL,
+  }, testInfo) => {
+    await page.setViewportSize({ width: 393, height });
+    const assertPrivacy = await privacy(page);
+    await page.goto("/");
+    await page.evaluate(
+      (scale) => (document.documentElement.style.fontSize = `${16 * scale}px`),
+      textScale,
+    );
+    await fit(page);
+    const entry = page.getByRole("button", {
+      name: "Перейти к вопросам",
+      exact: true,
+    });
+    if (textScale === 1) {
+      const box = await entry.boundingBox();
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+    }
+    await onboard(page);
+    await fit(page);
+    await cardLinks(page);
+    await page
+      .getByRole("button", { name: "Посмотреть: Прямые джинсы", exact: true })
+      .click();
+    await fit(page);
+    const use = page.getByRole("button", {
+      name: "Использовать эту вещь",
+      exact: true,
+    });
+    if (height === 720 && textScale === 1) {
+      const box = await use.boundingBox();
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+    }
+    await use.scrollIntoViewIfNeeded();
+    await expect(use).toBeInViewport();
+    await page.screenshot({
+      path: testInfo.outputPath(`item-${height}-${textScale}.png`),
+      fullPage: true,
+    });
+    await use.click();
+    await page
+      .getByRole("button", { name: "В демо-избранное", exact: true })
+      .click();
+    await expect(page.getByRole("status")).toContainText("только в памяти");
+    await fit(page);
+    await assertPrivacy(baseURL);
+  });
+}
