@@ -42,3 +42,33 @@ test("HTTP VK login, authenticated write and read-back work with injected test a
     assert.equal((await fetch(base + "photos", { method: "POST", headers, body: "synthetic" })).status, 404);
   } finally { await new Promise((resolve) => server.close(resolve)); await rm(dir, { recursive: true }); }
 });
+
+test("budget denial still permits only authenticated CSRF-checked bounded logout", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "stylist-synthetic-logout-"));
+  const secret = "synthetic-test-secret";
+  let allowed = true;
+  const cancelled = [];
+  const server = startStagingServer({ env: { STAGING_DATA_DIR: dir, STAGING_ORIGIN: "https://example.test", VK_APP_ID: "123", VK_APP_SECRET: secret, PORT: "0" }, budgetAllowed: () => allowed, photoFlow: { cancel: (owner) => cancelled.push(owner), close() {}, enabled: () => false } });
+  try {
+    await once(server, "listening");
+    const base = `http://127.0.0.1:${server.address().port}/api/staging/`;
+    const raw = `vk_app_id=123&vk_ts=${Math.floor(Date.now() / 1000)}&vk_user_id=456`;
+    const headers = { Origin: "https://example.test", "X-CSRF-Intent": "ai-stylist" };
+    const login = await fetch(base + "vk-session", { method: "POST", headers, body: `${raw}&sign=${createHmac("sha256", secret).update(raw).digest("base64url")}` });
+    headers.Cookie = login.headers.get("set-cookie").split(";")[0];
+    allowed = false;
+    assert.equal((await fetch(base + "session", { headers })).status, 503);
+    assert.equal((await fetch(base + "logout", { headers })).status, 503);
+    assert.equal((await fetch(base + "logout", { method: "POST", headers: { ...headers, Origin: "https://evil.test" } })).status, 403);
+    assert.equal((await fetch(base + "logout", { method: "POST", headers: { ...headers, "X-CSRF-Intent": "" } })).status, 403);
+    assert.equal((await fetch(base + "logout", { method: "POST", headers: { ...headers, Cookie: "stylist_vk=stale" } })).status, 401);
+    assert.equal((await fetch(base + "logout", { method: "POST", headers, body: "x".repeat(16385) })).status, 413);
+    assert.deepEqual(cancelled, []);
+    const logout = await fetch(base + "logout", { method: "POST", headers });
+    assert.equal(logout.status, 200);
+    assert.match(logout.headers.get("set-cookie"), /Max-Age=0/);
+    assert.deepEqual(cancelled, ["vk:123:456"]);
+    allowed = true;
+    assert.equal((await fetch(base + "session", { headers })).status, 401);
+  } finally { await new Promise((resolve) => server.close(resolve)); await rm(dir, { recursive: true }); }
+});

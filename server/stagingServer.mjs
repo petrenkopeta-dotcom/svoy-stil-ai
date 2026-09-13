@@ -21,7 +21,8 @@ export function startStagingServer({ env = process.env, budgetAllowed = () => fa
     request.once("aborted", () => abort.abort());
     try {
       // Admission is checked before reading a body, then again by the API.
-      if (await budgetAllowed() !== true) {
+      const logout = request.url === "/api/staging/logout" && request.method === "POST";
+      if (!logout && await budgetAllowed() !== true) {
         response.writeHead(503, { "Content-Type": "application/json", "Cache-Control": "no-store", Connection: "close" }).end(JSON.stringify({ code: "staging_budget_blocked" }));
         return;
       }
@@ -53,3 +54,4 @@ export function startStagingServer({ env = process.env, budgetAllowed = () => fa
   return server.listen(Number(env.PORT || 8788), "127.0.0.1");
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) startStagingServer();
+
