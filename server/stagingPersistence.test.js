@@ -1,0 +1,394 @@
+// Reproduce on Node 24.17.0 (Windows or Linux):
+// node --test server/stagingPersistence.test.js
+// Loopback only, synthetic identities, fresh temporary files; no production gate bypass.
+import test from "node:test";
+import assert from "node:assert/strict";
+import { once } from "node:events";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { createHmac } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { startStagingServer } from "./stagingServer.mjs";
+import {
+  createVkStagingClient,
+  vkJourneyError,
+} from "../src/vkStagingClient.js";
+
+const secret = "synthetic-persistence-test-only";
+const origin = "https://example.test";
+const items = [{ id: "synthetic-1", category: "shirt", color: "blue" }];
+const signed = (user = "456", timestamp = Math.floor(Date.now() / 1000)) => {
+  const raw = `vk_app_id=123&vk_ts=${timestamp}&vk_user_id=${user}`;
+  return `${raw}&sign=${createHmac("sha256", secret).update(raw).digest("base64url")}`;
+};
+
+async function fixture(t) {
+  const dir = await mkdtemp(
+    path.join(tmpdir(), "stylist-synthetic-persistence-"),
+  );
+  const env = {
+    STAGING_DATA_DIR: dir,
+    STAGING_ORIGIN: origin,
+    VK_APP_ID: "123",
+    VK_APP_SECRET: secret,
+    PORT: "0",
+  };
+  let server, base;
+  const stop = async () => {
+    if (server) {
+      const old = server;
+      server = undefined;
+      const exited = once(old, "exit");
+      old.send("stop");
+      const timer = setTimeout(() => old.kill(), 5000);
+      try {
+        assert.deepEqual(await exited, [0, null]);
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+  };
+  t.after(async () => {
+    await stop();
+    await rm(dir, { recursive: true });
+  });
+  const start = async () => {
+    // Actual child process restart, no shared database handles or JS session state.
+    const source = `
+      import { startStagingServer } from ${JSON.stringify(new URL("./stagingServer.mjs", import.meta.url).href)};
+      const server = startStagingServer({ env: ${JSON.stringify(env)}, budgetAllowed: () => true });
+      server.once("listening", () => process.send(server.address().port));
+      process.once("message", () => server.close(() => process.disconnect()));
+    `;
+    server = spawn(
+      process.execPath,
+      ["--input-type=module", "--eval", source],
+      { stdio: ["ignore", "ignore", "ignore", "ipc"], windowsHide: true },
+    );
+    const ready = once(server, "message");
+    const stopped = once(server, "exit").then(() => {
+      throw new Error("synthetic_bff_start_failed");
+    });
+    const [port] = await Promise.race([ready, stopped]);
+    base = `http://127.0.0.1:${port}`;
+  };
+  const request = (
+    route,
+    { cookie = "", method = "GET", body, ...rest } = {},
+  ) =>
+    fetch(`${base}/api/staging/${route}`, {
+      method,
+      body,
+      headers: {
+        Origin: origin,
+        "X-CSRF-Intent": "ai-stylist",
+        Cookie: cookie,
+        ...rest.headers,
+      },
+    });
+  const login = async (launch = signed()) => {
+    const response = await request("vk-session", {
+      method: "POST",
+      body: launch,
+    });
+    assert.equal(response.status, 200);
+    assert.match(
+      response.headers.get("set-cookie"),
+      /HttpOnly; Secure; SameSite=None/,
+    );
+    return response.headers.get("set-cookie").split(";")[0];
+  };
+  const edit = (file, action) => {
+    const db = new DatabaseSync(path.join(dir, file));
+    try {
+      return action(db);
+    } finally {
+      db.close();
+    }
+  };
+  await start();
+  return {
+    dir,
+    env,
+    start,
+    stop,
+    request,
+    login,
+    edit,
+    get base() {
+      return base;
+    },
+  };
+}
+
+test("file-backed HTTP wardrobe survives Node process restart, refresh and logout/relogin with two isolated owners", async (t) => {
+  const f = await fixture(t);
+  const a = await f.login(),
+    b = await f.login(signed("789"));
+  assert.deepEqual(await (await f.request("wardrobe", { cookie: a })).json(), {
+    items: [],
+  });
+  assert.equal(
+    (
+      await f.request("wardrobe", {
+        cookie: a,
+        method: "PUT",
+        body: JSON.stringify(items),
+      })
+    ).status,
+    200,
+  );
+  await f.stop();
+  await f.start();
+  assert.equal((await f.request("session", { cookie: a })).status, 200);
+  assert.deepEqual(await (await f.request("wardrobe", { cookie: a })).json(), {
+    items,
+  });
+  assert.deepEqual(await (await f.request("wardrobe", { cookie: b })).json(), {
+    items: [],
+  });
+  assert.equal(
+    (await f.request("wardrobe?owner=vk:123:456", { cookie: b })).status,
+    404,
+  );
+  assert.equal(
+    (
+      await f.request("wardrobe", {
+        cookie: b,
+        method: "PUT",
+        body: JSON.stringify([{ ...items[0], owner: "vk:123:456" }]),
+      })
+    ).status,
+    422,
+  );
+  const bItems = [{ ...items[0], color: "black" }];
+  assert.equal(
+    (
+      await f.request("wardrobe", {
+        cookie: b,
+        method: "PUT",
+        body: JSON.stringify(bItems),
+        headers: { "X-User-Id": "vk:123:456" },
+      })
+    ).status,
+    200,
+  );
+  assert.deepEqual(await (await f.request("wardrobe", { cookie: a })).json(), {
+    items,
+  });
+  assert.deepEqual(await (await f.request("wardrobe", { cookie: b })).json(), {
+    items: bItems,
+  });
+  assert.equal(
+    (await f.request("logout", { cookie: a, method: "POST" })).status,
+    200,
+  );
+  assert.equal((await f.request("wardrobe", { cookie: a })).status, 401);
+  assert.equal(
+    (await f.request("wardrobe", { cookie: a, method: "PUT", body: "[]" }))
+      .status,
+    401,
+  );
+  await f.stop();
+  await f.start();
+  assert.equal((await f.request("session", { cookie: a })).status, 401);
+  const relogin = await f.login();
+  assert.deepEqual(
+    await (await f.request("wardrobe", { cookie: relogin })).json(),
+    { items },
+  );
+});
+
+test("HTTP rejects forged/expired launch and expired sessions without modifying stored wardrobe", async (t) => {
+  const f = await fixture(t);
+  for (const launch of [
+    signed().replace("vk_user_id=456", "vk_user_id=789"),
+    signed("456", Math.floor(Date.now() / 1000) - 301),
+  ]) {
+    const response = await f.request("vk-session", {
+      method: "POST",
+      body: launch,
+    });
+    assert.equal(response.status, 400);
+    assert.equal(response.headers.get("set-cookie"), null);
+  }
+  const cookie = await f.login();
+  f.edit("sessions.sqlite", (db) =>
+    db.prepare("UPDATE sessions SET expires=?").run(Date.now() - 1),
+  );
+  assert.equal((await f.request("session", { cookie })).status, 401);
+  assert.equal(
+    (
+      await f.request("wardrobe", {
+        cookie,
+        method: "PUT",
+        body: JSON.stringify(items),
+      })
+    ).status,
+    401,
+  );
+  assert.deepEqual(
+    await (await f.request("wardrobe", { cookie: await f.login() })).json(),
+    { items: [] },
+  );
+});
+
+test("corrupt stored JSON/schema and missing table return safe unavailable, never empty or successful", async (t) => {
+  const f = await fixture(t),
+    cookie = await f.login();
+  for (const value of [
+    "broken-json",
+    "{}",
+    '[{"id":"x","category":"shirt","color":"blue","extra":"no"}]',
+  ]) {
+    f.edit("metadata.sqlite", (db) =>
+      db
+        .prepare("INSERT OR REPLACE INTO staging_wardrobe VALUES (?,?)")
+        .run("vk:123:456", value),
+    );
+    const response = await f.request("wardrobe", { cookie });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { code: "storage_unavailable" });
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  }
+  f.edit("metadata.sqlite", (db) => db.exec("DROP TABLE staging_wardrobe"));
+  for (const method of ["GET", "PUT"]) {
+    const response = await f.request("wardrobe", {
+      cookie,
+      method,
+      ...(method === "PUT" ? { body: JSON.stringify(items) } : {}),
+    });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { code: "storage_unavailable" });
+  }
+});
+
+test("SQLite write lock fails explicitly, recovery retry saves once", async (t) => {
+  const f = await fixture(t),
+    cookie = await f.login();
+  const lock = new DatabaseSync(path.join(f.dir, "metadata.sqlite"));
+  try {
+    lock.exec("BEGIN IMMEDIATE");
+    const failed = await f.request("wardrobe", {
+      cookie,
+      method: "PUT",
+      body: JSON.stringify(items),
+    });
+    assert.equal(failed.status, 503);
+    assert.deepEqual(await failed.json(), { code: "storage_unavailable" });
+  } finally {
+    lock.exec("ROLLBACK");
+    lock.close();
+  }
+  assert.deepEqual(await (await f.request("wardrobe", { cookie })).json(), {
+    items: [],
+  });
+  for (let i = 0; i < 2; i++)
+    assert.equal(
+      (
+        await f.request("wardrobe", {
+          cookie,
+          method: "PUT",
+          body: JSON.stringify(items),
+        })
+      ).status,
+      200,
+    );
+  assert.deepEqual(await (await f.request("wardrobe", { cookie })).json(), {
+    items,
+  });
+  assert.equal(
+    f.edit(
+      "metadata.sqlite",
+      (db) => db.prepare("SELECT count(*) n FROM staging_wardrobe").get().n,
+    ),
+    1,
+  );
+});
+
+test("lost save acknowledgement/readback stays unconfirmed in real client; refresh recovers committed data", async (t) => {
+  const f = await fixture(t);
+  let cookie = "",
+    lose = "",
+    writes = 0;
+  const client = createVkStagingClient({
+    launch: signed(),
+    fetchImpl: async (url, options) => {
+      if (options.method === "PUT") writes++;
+      const response = await fetch(f.base + url, {
+        ...options,
+        headers: { ...options.headers, Origin: origin, Cookie: cookie },
+      });
+      if (response.headers.has("set-cookie"))
+        cookie = response.headers.get("set-cookie").split(";")[0];
+      if (
+        (lose === "put" && options.method === "PUT") ||
+        (lose === "get" && url.endsWith("wardrobe") && options.method === "GET")
+      ) {
+        lose = "";
+        await response.arrayBuffer(); // Real committed HTTP response deliberately lost in transport seam.
+        throw new TypeError("synthetic_connection_lost");
+      }
+      return response;
+    },
+  });
+  t.after(() => client.close());
+  await client.login();
+  for (const failure of ["put", "get"]) {
+    lose = failure;
+    const before = writes;
+    await assert.rejects(client.save(items), /synthetic_connection_lost/);
+    assert.equal(writes, before + 1); // No automatic write retry.
+    await f.stop();
+    await f.start();
+    assert.deepEqual(await client.wardrobe(), { items });
+  }
+  assert.deepEqual(await client.save(items), { items });
+  assert.equal(
+    f.edit(
+      "metadata.sqlite",
+      (db) => db.prepare("SELECT count(*) n FROM staging_wardrobe").get().n,
+    ),
+    1,
+  );
+});
+
+test("corrupt sessions fail safely; corrupt or absent storage prevents listener startup", async (t) => {
+  const f = await fixture(t),
+    cookie = await f.login();
+  for (const value of [
+    "invalid-json",
+    "{}",
+    JSON.stringify({
+      userId: "vk:999:456",
+      expiresAt: Math.floor(Date.now() / 1000) + 3600,
+    }),
+  ]) {
+    f.edit("sessions.sqlite", (db) =>
+      db.prepare("UPDATE sessions SET value=?").run(value),
+    );
+    const response = await f.request("session", { cookie });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { code: "storage_unavailable" });
+  }
+  await f.stop();
+  await writeFile(path.join(f.dir, "sessions.sqlite"), "synthetic-corruption");
+  assert.throws(
+    () => startStagingServer({ env: f.env }),
+    /staging_storage_unavailable/,
+  );
+  assert.throws(() =>
+    startStagingServer({
+      env: { ...f.env, STAGING_DATA_DIR: path.join(f.dir, "absent") },
+    }),
+  );
+});
+
+test("storage failure UI message describes wardrobe and requires readback", () => {
+  const error = vkJourneyError({ code: "storage_unavailable", status: 503 });
+  assert.equal(error.state, "unavailable");
+  assert.match(error.message, /Хранилище гардероба/);
+  assert.match(error.message, /не подтверждён/);
+});

@@ -1,6 +1,32 @@
 import { randomUUID } from "node:crypto";
 import { verifyVkLaunch } from "./vkAuth.mjs";
 
+const validWardrobe = (items) =>
+  Array.isArray(items) &&
+  items.length <= 100 &&
+  items.every(
+    (item) =>
+      item &&
+      typeof item === "object" &&
+      !Array.isArray(item) &&
+      Object.keys(item).every((key) =>
+        ["id", "category", "color"].includes(key),
+      ) &&
+      [item.id, item.category, item.color].every(
+        (value) =>
+          typeof value === "string" && /^[\p{L}\p{N} _-]{1,64}$/u.test(value),
+      ),
+  );
+
+// Storage failures must not masquerade as invalid input or an empty wardrobe.
+const stored = async (operation) => {
+  try {
+    return await operation();
+  } catch {
+    throw new Error("storage_unavailable");
+  }
+};
+
 /** Separate Russian backend contract. No Supabase or external photo forwarding. */
 export function createStagingApi({
   db,
@@ -51,10 +77,12 @@ export function createStagingApi({
         const launch = await request.text();
         const identity = verifyVkLaunch(launch, { secret, appId, now: now() });
         const id = randomUUID();
-        await sessions.put(id, {
-          ...identity,
-          expiresAt: Math.floor(now() / 1000) + 3600,
-        });
+        await stored(() =>
+          sessions.put(id, {
+            ...identity,
+            expiresAt: Math.floor(now() / 1000) + 3600,
+          }),
+        );
         return reply(
           200,
           { userId: identity.userId },
@@ -69,7 +97,15 @@ export function createStagingApi({
         .map((x) => x.trim())
         .find((x) => x.startsWith("stylist_vk="))
         ?.slice(11);
-      const session = id && (await sessions.get(id));
+      const session = id && (await stored(() => sessions.get(id)));
+      if (
+        session &&
+        (!Number.isSafeInteger(session.expiresAt) ||
+          typeof session.userId !== "string" ||
+          !session.userId.startsWith(`vk:${appId}:`) ||
+          !/^[1-9]\d*$/.test(session.userId.slice(`vk:${appId}:`.length)))
+      )
+        throw new Error("storage_unavailable");
       if (!session || session.expiresAt * 1000 <= now())
         return reply(401, { code: "session_required" });
       if (url.pathname === "/api/staging/session" && request.method === "GET")
@@ -83,7 +119,7 @@ export function createStagingApi({
         if ((await request.arrayBuffer()).byteLength > 16384)
           return reply(413, { code: "request_too_large" });
         photoFlow?.cancel(session.userId);
-        await sessions.delete(id);
+        await stored(() => sessions.delete(id));
         return reply(
           200,
           { signedOut: true },
@@ -144,10 +180,15 @@ export function createStagingApi({
         url.pathname === "/api/staging/wardrobe" &&
         request.method === "GET"
       ) {
-        const row = db
-          .prepare("SELECT value FROM staging_wardrobe WHERE owner=?")
-          .get(session.userId);
-        return reply(200, { items: row ? JSON.parse(row.value) : [] });
+        const items = await stored(() => {
+          const row = db
+            .prepare("SELECT value FROM staging_wardrobe WHERE owner=?")
+            .get(session.userId);
+          const value = row ? JSON.parse(row.value) : [];
+          if (!validWardrobe(value)) throw new Error("invalid_stored_wardrobe");
+          return value;
+        });
+        return reply(200, { items });
       }
       if (
         url.pathname === "/api/staging/wardrobe" &&
@@ -158,28 +199,12 @@ export function createStagingApi({
           return reply(413, { code: "request_too_large" });
         const items = JSON.parse(raw);
         // A narrow metadata-only schema prevents photo/base64 persistence bypass.
-        if (
-          !Array.isArray(items) ||
-          items.length > 100 ||
-          items.some(
-            (item) =>
-              !item ||
-              typeof item !== "object" ||
-              Array.isArray(item) ||
-              Object.keys(item).some(
-                (key) => !["id", "category", "color"].includes(key),
-              ) ||
-              ![item.id, item.category, item.color].every(
-                (value) =>
-                  typeof value === "string" &&
-                  /^[\p{L}\p{N} _-]{1,64}$/u.test(value),
-              ),
-          )
-        )
+        if (!validWardrobe(items))
           return reply(422, { code: "invalid_wardrobe" });
-        db.prepare("INSERT OR REPLACE INTO staging_wardrobe VALUES (?,?)").run(
-          session.userId,
-          JSON.stringify(items),
+        await stored(() =>
+          db
+            .prepare("INSERT OR REPLACE INTO staging_wardrobe VALUES (?,?)")
+            .run(session.userId, JSON.stringify(items)),
         );
         return reply(200, { saved: true });
       }
@@ -187,6 +212,7 @@ export function createStagingApi({
     } catch (error) {
       // Only allowlisted protocol errors leave the server; never worker diagnostics.
       const status = {
+        storage_unavailable: 503,
         photo_release_unapproved: 503,
         photo_busy: 409,
         candidate_not_found: 404,

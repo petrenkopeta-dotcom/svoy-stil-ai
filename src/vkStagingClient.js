@@ -137,6 +137,12 @@ export function createVkStagingClient({
 }
 
 export function vkJourneyError(error) {
+  if (error.code === "storage_unavailable")
+    return {
+      state: "unavailable",
+      message:
+        "Хранилище гардероба временно недоступно. Результат не подтверждён; обновите гардероб перед повтором.",
+    };
   if (error.status === 401 || error.code === "vk_launch_rejected")
     return {
       state: "error",

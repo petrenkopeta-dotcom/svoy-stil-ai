@@ -20,19 +20,26 @@ export function startStagingServer({
   const db = new DatabaseSync(
     path.join(env.STAGING_DATA_DIR, "metadata.sqlite"),
   );
-  const sessions = createSqliteSessionStore({
-    filename: path.join(env.STAGING_DATA_DIR, "sessions.sqlite"),
-  });
-  // No opt-in environment bypass: provider billing enforcement is not connected.
-  const handler = createStagingApi({
-    db,
-    sessions,
-    origin: env.STAGING_ORIGIN,
-    secret: env.VK_APP_SECRET,
-    appId: env.VK_APP_ID,
-    budgetAllowed,
-    photoFlow,
-  });
+  let sessions, handler;
+  try {
+    sessions = createSqliteSessionStore({
+      filename: path.join(env.STAGING_DATA_DIR, "sessions.sqlite"),
+    });
+    // No opt-in environment bypass: provider billing enforcement is not connected.
+    handler = createStagingApi({
+      db,
+      sessions,
+      origin: env.STAGING_ORIGIN,
+      secret: env.VK_APP_SECRET,
+      appId: env.VK_APP_ID,
+      budgetAllowed,
+      photoFlow,
+    });
+  } catch {
+    sessions?.close();
+    db.close();
+    throw new Error("staging_storage_unavailable");
+  }
   let inFlight = 0;
   const server = createServer(async (request, response) => {
     if (inFlight >= 2) {
