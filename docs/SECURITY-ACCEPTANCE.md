@@ -330,3 +330,64 @@ CPU FREE сообщён координатору и интегратору. Но
 проводился. Исправление пригодно к интеграции с regression5e8c734; готовность
 нового combined SHA этой проверкой не установлена. Предыдущие full-run perf
 отказы, Linux/container CI и все DEPLOY-NO-GO ограничения не сняты.
+
+## Итоговый combined 77178a7 — независимая локальная приёмка
+
+Координатор разрешил один bounded цикл для exact
+`77178a7d55718a56cec43628f9693427dd2d224e`; интегратор подтвердил CPU FREE после
+своего Python-only recovery. Все независимые динамические этапы ниже выполнены
+последовательно, по одной попытке. Авторские результаты не использованы вместо
+собственных exit codes. Документ31e594 и дальнейшие отчёты не входили в candidate.
+
+Exact archive/server cwd:
+`C:/Users/petre/.codex/worktrees/cc12/AI-стилист 2/artifacts/security-integration-77178a7`.
+Production и test-файлы архива не редактировались. Собственные isolated configs
+за пределами архива меняют только test paths, порты и управление серверами.
+App4295, demo4296, VK4297; strictPort, trace/screenshot/video off.
+
+| Проверка                                                                   | Независимый результат exact77178a7                               |
+| -------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `node scripts/run-tests.mjs`, один полный двухфазный прогон                | **524/524 +8/8 =532/532 PASS, exit0**, skip/todo0 в обеих фазах  |
+| Bundled Python-only `-B -m unittest discover -s runtime/cv -p 'test_*.py'` | **14/14 PASS**, отдельно captured `python_exit=0`, command exit0 |
+| Основной browser                                                           | **13/13 PASS, exit0,26.4с**                                      |
+| Отдельный journey browser после основного                                  | **10/10 PASS, exit0,18.0с**                                      |
+| Format/build/bundle/demo boundary                                          | **PASS**,546747B/5JS chunks                                      |
+| Repository boundary через exact temporary index                            | **455 tracked PASS**                                             |
+| Git diff check                                                             | **PASS**                                                         |
+
+Статическая сверка состава:115 уникальных Node-файлов =114 regular +1 **полный**
+`stylistCandidateEngine.test.js`; membership не теряется. Runner выполняет обе
+фазы синхронно и сохраняет ненулевой результат при failure/signal/spawn exception.
+Четыре runner tests входят в524 regular и прошли. Engine, perf assertions и
+порог1500 не менялись — изменена организация исполнения тестов, а не product SLO.
+Browser discovery заранее дал13 тестов в5 файлах и10 в1 файле; каждый архив
+ограничен явным testDir. Дубликатов из других archive в этом цикле нет.
+
+Сохранённые raw evidence вне Git: `artifacts/integration-77178a7-independent-*`
+для Node/Python/browser/journey и `*-membership.txt` для browser discovery.
+Конфиги: `artifacts/integration-77178a7-browser.config.mjs` и
+`artifacts/integration-77178a7-journey.config.mjs`.
+Исходные cd0acb0 full-run520/521/p95=1610 и a452 SEC-02 FAIL **сохранены**;
+успех нового SHA не переписывает историю и не доказывает модельный/production SLO.
+
+SEC-01, SEC-02, двойной confirm, budget retry lifecycle и disclosure100 теперь
+прошли в **одном проверенном combined SHA**. Новых подтверждённых дефектов в
+проверенном локальном scope не найдено; это не утверждение об отсутствии всех
+ошибок или доказательство точности моделей/хостинга.
+
+**Условный MERGE-review кода:** локальные проверки candidate прошли; код можно
+передавать координатору на окончательное решение при сохранении default deny.
+Безусловного разрешения merge нет до обязательного внешнего CI exact candidate,
+включая Linux/container job, и решения координатора. CI triggers — только PR
+и push main; отсутствие прогона integration-ветки до PR не равно Linux PASS.
+CI triggers не менялись, PR/merge в этой security-задаче не выполнялись.
+
+**DEPLOY-NO-GO:** model/semantic license, полный platform lock, реальная
+модельная валидация/recall/yield/SLO, provider billing и бюджет с резервами,
+российский host/process isolation/no-disk/egress/swap/core/symlink/junction —
+по-прежнему OPEN. Синтетические tests и локальный Edge не снимают эти gates.
+
+После завершения остановлены все три собственных сервера; CPU FREE сообщён
+координатору и интегратору. Динамические проверки прекращены до нового решения.
+Следующий шаг — внешняя CI-приёмка exact candidate и решение координатора;
+покупки, модели, пользовательские фото или деплой сейчас не требуются.
