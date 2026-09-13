@@ -328,3 +328,26 @@ body:has(.vk-staging) {
   height: auto;
   width: 100%;
 }
+.vk-staging .vk-city {
+  margin-top: 32px;
+}
+.vk-staging .vk-city h2 {
+  margin-top: 0;
+}
+.vk-staging .vk-city label {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+}
+.vk-staging .vk-city input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 12px;
+  border: 1px solid var(--vk-line);
+  border-radius: 4px;
+  background: var(--vk-surface);
+  color: var(--vk-ink);
+  font: inherit;
+}

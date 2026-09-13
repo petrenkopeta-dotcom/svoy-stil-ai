@@ -2,7 +2,7 @@
  * Profile city is a suggestion, never signed identity or an automatic selection.
  * A future forecast adapter receives only a resolved place, never VK UserInfo.
  */
-const placeText = (value) => {
+export const placeText = (value) => {
   if (
     typeof value !== "string" ||
     value.length > 100 ||

@@ -9,6 +9,7 @@ import {
   hasVkAnswer,
 } from "./vkStagingJourney.js";
 import "./VkStagingApp.css";
+import { VkCityPanel } from "./VkCityPanel.jsx";
 
 function Action({ children, ...props }) {
   return (
@@ -19,7 +20,7 @@ function Action({ children, ...props }) {
   );
 }
 
-export function VkStagingApp() {
+export function VkStagingApp({ cityBridge = null } = {}) {
   const [client] = useState(() => {
     const launch = window.location.search.slice(1);
     window.history.replaceState(null, "", window.location.pathname);
@@ -89,7 +90,10 @@ export function VkStagingApp() {
               : "";
       setMessage(
         prefix +
-          (error.status === 503 && busy !== "analyzing" && busy !== "confirming"
+          (error.status === 503 &&
+          error.code !== "storage_unavailable" &&
+          busy !== "analyzing" &&
+          busy !== "confirming"
             ? "Сервис временно недоступен. Проверьте соединение или вернитесь позже."
             : result.message),
       );
@@ -630,6 +634,9 @@ export function VkStagingApp() {
               </Action>
             )}
           </>
+        )}
+        {signedIn && !invalidSession && state !== "logout" && (
+          <VkCityPanel bridge={cityBridge} />
         )}
       </main>
       {signedIn && (
