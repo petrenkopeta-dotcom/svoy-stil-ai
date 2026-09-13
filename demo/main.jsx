@@ -215,13 +215,8 @@ function Demo() {
                 Осталось увидеть сочетания.
               </p>
               <p className="muted">
-                Три вопроса, небольшой демо-гардероб и пример образа.
-                Посмотрите, как может выглядеть ваш ежедневный выбор.
+                Три вопроса и примеры сочетаний. Без входа и загрузки фото.
               </p>
-              <div className="entry-art">
-                <Garment item={samples[0]} />
-                <Garment item={samples[1]} />
-              </div>
             </div>
             <div className="action">
               <Primary onClick={() => go("questions")}>

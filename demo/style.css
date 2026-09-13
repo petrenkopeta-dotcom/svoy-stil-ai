@@ -162,18 +162,7 @@ p {
   color: var(--ink);
 }
 .entry-panel {
-  padding-bottom: 8px;
-}
-.entry-art {
-  display: flex;
-  justify-content: center;
-  max-width: 380px;
-  margin: 0 auto;
-  gap: 12px;
-}
-.entry-art .garment-art {
-  width: 50%;
-  height: 150px;
+  padding-block: 20px;
 }
 .action {
   margin-top: 40px;

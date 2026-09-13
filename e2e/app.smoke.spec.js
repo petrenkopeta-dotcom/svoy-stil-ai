@@ -92,7 +92,7 @@ test("SPA boots at a real mobile viewport without pre-consent egress", async ({
 
   await page.goto("/", { waitUntil: "networkidle" });
 
-  await expect(page).toHaveTitle("ATELIER AI");
+  await expect(page).toHaveTitle("Надеть есть что");
   await expect(page.locator("#root")).not.toBeEmpty();
   const geometry = await page.evaluate(() => ({
     viewport: window.innerWidth,

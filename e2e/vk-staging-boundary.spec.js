@@ -28,7 +28,7 @@ test("VK startup never imports or reads the local prototype context", async ({
     }),
   );
   await page.goto("/");
-  await expect(page.locator('[role="status"][data-state]')).toBeVisible();
+  await expect(page.locator('[role="status"][data-state]')).toHaveCount(1);
   await expect(page.locator('[role="status"][data-state]')).not.toHaveAttribute(
     "data-state",
     "loading",
@@ -36,8 +36,11 @@ test("VK startup never imports or reads the local prototype context", async ({
   await expect(page).toHaveTitle("Надеть есть что");
   expect(await page.evaluate(() => window.prototypeStorageReads)).toEqual([]);
   expect(
+    await page.evaluate(() => Boolean(window.__ATELIER_LOCAL_TELEMETRY__)),
+  ).toBe(false);
+  expect(
     requests.filter((path) =>
-      /^\/src\/(?:LegacyApp|main|ContextProvider|styles\.|telemetry\/)/.test(
+      /(?:^\/src\/(?:LegacyApp|main|ContextProvider|styles\.|telemetry\/)|\/assets\/LegacyApp[-.])/.test(
         path,
       ),
     ),

@@ -74,7 +74,7 @@ for (const width of [320, 390, 1280]) {
     page,
     baseURL,
   }, testInfo) => {
-    await page.setViewportSize({ width, height: 900 });
+    await page.setViewportSize({ width, height: 844 });
     const assertPrivacy = await privacy(page);
     await page.goto("/");
     await expect(page).toHaveTitle("Надеть есть что · Демо");
@@ -85,6 +85,13 @@ for (const width of [320, 390, 1280]) {
       page.getByText("Это открытое демо:", { exact: false }),
     ).toBeVisible();
     await fit(page);
+    const firstAction = await page
+      .getByRole("button", {
+        name: "Перейти к вопросам",
+        exact: true,
+      })
+      .boundingBox();
+    expect(firstAction.y + firstAction.height).toBeLessThanOrEqual(844);
     await page.screenshot({
       path: testInfo.outputPath(`entry-${width}.png`),
       fullPage: true,
