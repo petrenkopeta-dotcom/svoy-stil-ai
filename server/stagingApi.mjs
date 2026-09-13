@@ -8,8 +8,9 @@ export function createStagingApi({ db, sessions, origin, secret, appId, now = Da
   const reply = (status, value, headers = {}) => new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff", ...headers } });
   return async (request) => {
     try {
-      if (await budgetAllowed() !== true) return reply(503, { code: "staging_budget_blocked" });
       const url = new URL(request.url);
+      const logout = url.pathname === "/api/staging/logout" && request.method === "POST" && !url.search;
+      if (!logout && await budgetAllowed() !== true) return reply(503, { code: "staging_budget_blocked" });
       if (url.search) return reply(400, { code: "query_not_allowed" });
       if (request.method !== "GET" && (request.headers.get("origin") !== origin || request.headers.get("x-csrf-intent") !== "ai-stylist")) return reply(403, { code: "origin_rejected" });
       if (url.pathname === "/api/staging/vk-session" && request.method === "POST") {
@@ -24,6 +25,7 @@ export function createStagingApi({ db, sessions, origin, secret, appId, now = Da
       if (!session || session.expiresAt * 1000 <= now()) return reply(401, { code: "session_required" });
       if (url.pathname === "/api/staging/session" && request.method === "GET") return reply(200, { authenticated: true });
       if (url.pathname === "/api/staging/logout" && request.method === "POST") {
+        if ((await request.arrayBuffer()).byteLength > 16384) return reply(413, { code: "request_too_large" });
         photoFlow?.cancel(session.userId);
         await sessions.delete(id);
         return reply(200, { signedOut: true }, { "Set-Cookie": "stylist_vk=; Path=/api/staging; HttpOnly; Secure; SameSite=None; Max-Age=0" });
@@ -64,3 +66,4 @@ export function createStagingApi({ db, sessions, origin, secret, appId, now = Da
     } catch { return reply(400, { code: "request_rejected" }); }
   };
 }
+
