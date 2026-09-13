@@ -64,13 +64,11 @@ test("synthetic photo UI distinguishes empty, timeout, confirmation, read-back, 
   await expect(status).toHaveAttribute("data-state", "empty");
   expect(new URL(page.url()).search).toBe("");
   const upload = () =>
-    page
-      .locator('input[type="file"]')
-      .setInputFiles({
-        name: "synthetic.png",
-        mimeType: "image/png",
-        buffer: png,
-      });
+    page.locator('input[type="file"]').setInputFiles({
+      name: "synthetic.png",
+      mimeType: "image/png",
+      buffer: png,
+    });
   await upload();
   await expect(status).toContainText("не найдена");
   mode = "timeout";
@@ -98,3 +96,211 @@ test("denied capability has no upload control", async ({ page }) => {
   await expect(page.getByRole("status")).toHaveAttribute("data-state", "empty");
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
 });
+
+test("budget recovery offers retry after initial denied VK login", async ({
+  page,
+}) => {
+  let allowed = false;
+  const launches = [];
+  await page.route("**/api/staging/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("vk-session")) launches.push(route.request().postData());
+    if (!allowed)
+      return route.fulfill({
+        status: 503,
+        json: { code: "staging_budget_blocked" },
+      });
+    if (path.endsWith("session") && !path.endsWith("vk-session"))
+      return route.fulfill({ status: 401, json: { code: "session_required" } });
+    return route.fulfill({
+      json: { items: [], photos: false, authenticated: true },
+    });
+  });
+  await page.goto("/?vk_app_id=123&sign=synthetic");
+  await expect(page.getByRole("status")).toHaveAttribute(
+    "data-state",
+    "unavailable",
+  );
+  allowed = true;
+  await page
+    .getByRole("button", { name: "Повторить вход", exact: true })
+    .click({ timeout: 3000 });
+  await expect(page.getByRole("status")).toHaveAttribute("data-state", "empty");
+  expect(launches).toEqual([
+    "vk_app_id=123&sign=synthetic",
+    "vk_app_id=123&sign=synthetic",
+  ]);
+});
+
+test("bounded inventory tells the user older photos are not displayed", async ({
+  page,
+}) => {
+  const items = Array.from({ length: 100 }, (_, index) => ({
+    ...saved,
+    id: `00000000-0000-0000-0000-${String(index).padStart(12, "0")}`,
+  }));
+  await page.route("**/api/staging/**", (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("capabilities"))
+      return route.fulfill({ json: { photos: true } });
+    if (path.endsWith("wardrobe"))
+      return route.fulfill({ json: { items: [] } });
+    if (path.endsWith("photos")) return route.fulfill({ json: { items } });
+    if (/\/photos\//.test(path))
+      return route.fulfill({ contentType: "image/png", body: png });
+    return route.fulfill({ json: { authenticated: true } });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toHaveAttribute("data-state", "ready");
+  await expect(page.getByText(/не более 100 последних/)).toBeVisible();
+});
+
+test("double confirmation sends one request; a lost response recovers by refresh", async ({
+  page,
+}) => {
+  let confirms = 0,
+    persisted = false,
+    completeConfirm;
+  const hold = new Promise((resolve) => {
+    completeConfirm = resolve;
+  });
+  await page.route("**/api/staging/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("capabilities"))
+      return route.fulfill({ json: { photos: true } });
+    if (path.endsWith("wardrobe"))
+      return route.fulfill({ json: { items: [] } });
+    if (path.endsWith("analyze"))
+      return route.fulfill({
+        json: {
+          candidates: [
+            {
+              id: "candidate",
+              label: "shirt",
+              preview: `data:image/png;base64,${png.toString("base64")}`,
+            },
+          ],
+        },
+      });
+    if (path.endsWith("confirm")) {
+      confirms++;
+      if (persisted)
+        return route.fulfill({
+          status: 404,
+          json: { code: "candidate_not_found" },
+        });
+      persisted = true;
+      await hold;
+      return route.abort("failed");
+    }
+    if (path.endsWith("photos"))
+      return route.fulfill({ json: { items: persisted ? [saved] : [] } });
+    if (path.endsWith(saved.id))
+      return route.fulfill({ contentType: "image/png", body: png });
+    return route.fulfill({ json: { authenticated: true } });
+  });
+  try {
+    await page.goto("/");
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "synthetic.png",
+      mimeType: "image/png",
+      buffer: png,
+    });
+    const button = page.getByRole("button", { name: "Подтвердить сохранение" });
+    await expect(button).toBeEnabled();
+    await button.evaluate((element) => {
+      element.click();
+      element.click();
+    });
+    await expect.poll(() => confirms).toBe(1);
+    await expect(page.getByRole("status")).toHaveAttribute(
+      "data-state",
+      "confirming",
+    );
+    completeConfirm();
+    await expect(page.getByRole("status")).toHaveAttribute(
+      "data-state",
+      "error",
+    );
+    await page.getByRole("button", { name: "Обновить гардероб" }).click();
+    await expect(page.getByAltText("Сохранённая проверенная вещь")).toHaveCount(
+      1,
+    );
+    expect(confirms).toBe(1);
+  } finally {
+    completeConfirm();
+  }
+});
+
+for (const exit of ["logout", "leave"])
+  test(`late analysis does not restore UI after ${exit}`, async ({ page }) => {
+    let completeAnalysis,
+      loggedOut = false;
+    const hold = new Promise((resolve) => {
+      completeAnalysis = resolve;
+    });
+    await page.route("**/api/staging/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("analyze")) {
+        await hold;
+        return route
+          .fulfill({
+            json: {
+              candidates: [
+                {
+                  id: "late",
+                  label: "shirt",
+                  preview: `data:image/png;base64,${png.toString("base64")}`,
+                },
+              ],
+            },
+          })
+          .catch(() => {});
+      }
+      if (path.endsWith("logout")) {
+        loggedOut = true;
+        return route.fulfill({ json: { signedOut: true } });
+      }
+      if (loggedOut)
+        return route.fulfill({
+          status: 401,
+          json: { code: "session_required" },
+        });
+      return route.fulfill({
+        json: { authenticated: true, photos: true, items: [] },
+      });
+    });
+    try {
+      await page.goto("/");
+      const started = page.waitForRequest("**/photos/analyze");
+      await page.locator('input[type="file"]').setInputFiles({
+        name: "synthetic.png",
+        mimeType: "image/png",
+        buffer: png,
+      });
+      await started;
+      await expect(page.getByRole("status")).toHaveAttribute(
+        "data-state",
+        "analyzing",
+      );
+      if (exit === "logout") {
+        await page.getByRole("button", { name: "Выйти", exact: true }).click();
+        await expect(page.getByRole("status")).toHaveAttribute(
+          "data-state",
+          "signedOut",
+        );
+      } else await page.goto("about:blank");
+      completeAnalysis();
+      await expect(page.locator("img")).toHaveCount(0);
+      await expect(
+        page.getByRole("button", { name: "Подтвердить сохранение" }),
+      ).toHaveCount(0);
+      if (exit === "logout")
+        await expect(page.getByRole("status")).toHaveAttribute(
+          "data-state",
+          "signedOut",
+        );
+    } finally {
+      completeAnalysis();
+    }
+  });

@@ -83,3 +83,149 @@ test("photo read-back mismatch cannot report a successful confirmation", async (
   await assert.rejects(client.confirm("candidate"), /photo_readback_mismatch/);
   client.close();
 });
+
+test("lost confirm response or lost read-back is recoverable without another saved row", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const { createHash } = await import("node:crypto");
+  const { createGarmentPhotoFlow } =
+    await import("../server/garmentPhotoFlow.mjs");
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jU1kAAAAASUVORK5CYII=",
+    "base64",
+  );
+  const safety = {
+    sha256: createHash("sha256").update(png).digest("hex"),
+    checked: true,
+    garmentOnly: true,
+    personPresent: false,
+    facePresent: false,
+  };
+  for (const failure of ["confirm", "read-back"]) {
+    const db = new DatabaseSync(":memory:");
+    const flow = createGarmentPhotoFlow({
+      db,
+      releaseApproved: () => true,
+      worker: {
+        close() {},
+        async analyze(bytes) {
+          assert.deepEqual(bytes, png);
+          return {
+            candidates: [
+              { label: "shirt", png: png.toString("base64"), safety },
+            ],
+          };
+        },
+      },
+    });
+    let drop = true;
+    const client = createVkStagingClient({
+      fetchImpl: async (url, options) => {
+        if (url.endsWith("confirm")) {
+          let value;
+          try {
+            value = await flow.confirm("a", JSON.parse(options.body).id);
+          } catch {
+            return Response.json(
+              { code: "candidate_not_found" },
+              { status: 404 },
+            );
+          }
+          if (drop && failure === "confirm") {
+            drop = false;
+            throw new TypeError("synthetic lost response");
+          }
+          return Response.json(value);
+        }
+        if (url.endsWith("photos"))
+          return Response.json({ items: flow.list("a") });
+        if (drop && failure === "read-back") {
+          drop = false;
+          throw new TypeError("synthetic lost read-back");
+        }
+        return new Response(flow.read("a", url.split("/").at(-1)).bytes);
+      },
+    });
+    try {
+      const [candidate] = await flow.analyze("a", png);
+      await assert.rejects(client.confirm(candidate.id), /synthetic lost/);
+      await assert.rejects(
+        client.confirm(candidate.id),
+        (error) => error.status === 404,
+      );
+      const { items } = await client.photos();
+      assert.equal(items.length, 1);
+      assert.deepEqual(
+        Buffer.from(
+          await (await client.readPhoto(items[0])).blob.arrayBuffer(),
+        ),
+        png,
+      );
+      assert.equal(flow.list("a").length, 1);
+    } finally {
+      client.close();
+      flow.close();
+      db.close();
+    }
+  }
+});
+
+test("budget-denied launch retries unchanged, expires server-side, and clears on logout", async () => {
+  const { vkJourneyError } = await import("./vkStagingClient.js");
+  const launch = "vk_ts=1800000000&sign=synthetic";
+  const calls = [];
+  let status = 503;
+  const client = createVkStagingClient({
+    launch,
+    fetchImpl: async (url, options) => {
+      calls.push({ url, body: options.body });
+      return Response.json(
+        status === 503
+          ? { code: "staging_budget_blocked" }
+          : status === 400
+            ? { code: "request_rejected" }
+            : {},
+        { status },
+      );
+    },
+  });
+  await assert.rejects(client.login(), (error) => error.status === 503);
+  status = 400; // Server rejects the original expired timestamp; no client renewal.
+  await assert.rejects(client.login(), (error) =>
+    vkJourneyError(error).message.includes("заново из VK"),
+  );
+  assert.deepEqual(
+    calls.slice(0, 2).map((call) => call.body),
+    [launch, launch],
+  );
+  status = 200;
+  await client.login();
+  assert.equal(calls.at(-1).url, "/api/staging/session");
+  client.close();
+
+  let finishLogin;
+  const pendingCalls = [];
+  const pendingClient = createVkStagingClient({
+    launch,
+    fetchImpl: async (url) => {
+      pendingCalls.push(url);
+      if (url.endsWith("vk-session"))
+        return new Promise((resolve) => {
+          finishLogin = () =>
+            resolve(
+              Response.json(
+                { code: "staging_budget_blocked" },
+                { status: 503 },
+              ),
+            );
+        });
+      return Response.json({});
+    },
+  });
+  const pending = assert.rejects(pendingClient.login());
+  await pendingClient.logout();
+  finishLogin();
+  await pending;
+  await pendingClient.login();
+  assert.equal(pendingCalls.at(-1), "/api/staging/session");
+  pendingClient.close();
+});

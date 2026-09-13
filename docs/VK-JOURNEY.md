@@ -94,3 +94,38 @@ Browser traces/screenshots/video отключены; результаты исп
   Повтор с escalation завершился самостоятельно. Config всегда `reuseExistingServer:false`.
 - SHA-256 проверенного UI: `8DFC7B840B87148C7F8AED6BA131F5D96CF4F92BF49606A7CCD0DB277EC000AC`;
   клиента: `B58E73D4CA80C54D12971CDFF59B8ABD2DB271528029143F816EFAFD5405F5D2`.
+
+## Followup: edge cases после 46ef738
+
+Проверка на исходном46ef738 сначала воспроизвела три конкретных дефекта:
+
+1. Initial VK login503 из-за budget: нет кнопки повтора, launch потерян; browser regression FAIL.
+2. При100 из105 серверных записей UI не предупреждал о лимите; browser regression FAIL.
+3. Два синхронных click до React-render отправляли2 POST confirm; browser regression FAIL
+   (expected1, received2). Сервер не создавал второй записи, но второй404 портил состояние UI.
+
+Scoped исправления в отдельной ветке `codex/vk-journey-edge-cases`, без изменения API:
+
+- Повторить вход доступно после неуспешного входа. Launch остаётся только в памяти после
+  явного `503 staging_budget_blocked`; исходный timestamp не меняется. После успеха,
+  прочих ошибок, logout/close он очищается. Отдельный epoch не позволяет позднему503
+  вернуть credentials после logout. Истёкший launch требует открыть приложение заново из VK.
+- На полном100-элементном экране есть notice о показе максимум100 последних вещей;
+  наличие более старых не утверждается как факт. Старые записи не изменяются/не удаляются.
+- Синхронный ref guard не пропускает вторую операцию до React-render. Guard освобождается
+  в finally только своей generation; logout увеличивает generation и остаётся доступным.
+
+Дополнительные доказательства (не повтор существующего sequential replay теста):
+
+- Server concurrent confirm во время незавершённой verify сохраняет ровно1 запись.
+- Cancel владельца во время deferred analyze/verify отбрасывает поздний результат.
+- Потеря confirm-response после реального SQLite save и потеря отдельного read-back:
+  retry того же candidate получает404, list+проверенное чтение возвращают1 запись без дубля.
+- Browser двойной click отправляет1 запрос; после lost response кнопка обновления читает
+  сохранённую вещь и guard не блокирует восстановление.
+- Browser logout и уход со страницы во время pending analyze не возвращают поздние фото.
+- Browser initial budget false→true восстанавливает вход в том же экране; launch неизменен.
+
+Профильный browser config4210: **7/7 PASS**, exit0,22.9с со штатным scoped escalation.
+Точечные Node client/flow: **12/12 PASS**. Production server в followup не изменён.
+Это synthetic correctness evidence, не работа с реальным VK/моделью/фото пользователей.
