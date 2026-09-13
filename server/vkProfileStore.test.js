@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { randomUUID } from "node:crypto";
 import { createVkProfileStore } from "./vkProfileStore.mjs";
+import { createStagingApi } from "./stagingApi.mjs";
 import { emptyProfileDraft } from "../src/vkProfileContract.js";
 
 test("profile store remains closed without capability and rejects malformed content", () => {
@@ -142,6 +143,9 @@ test("corrupt profile and receipt data never become empty or a successful write"
     store.write("a", mutation, '"profile-0"');
     db.exec("UPDATE staging_profiles SET value='{}'");
     assert.throws(() => store.read("a"), { code: "storage_unavailable" });
+    assert.throws(() => store.write("a", mutation, '"profile-0"'), {
+      code: "storage_unavailable",
+    });
     assert.throws(
       () =>
         store.write(
@@ -155,6 +159,66 @@ test("corrupt profile and receipt data never become empty or a successful write"
     assert.throws(() => store.write("a", mutation, '"profile-0"'), {
       code: "storage_unavailable",
     });
+  } finally {
+    db.close();
+  }
+});
+
+test("API rechecks profile capability and budget on every request without default schema creation", async () => {
+  const db = new DatabaseSync(":memory:");
+  let enabled = false,
+    budget = true;
+  try {
+    const api = createStagingApi({
+      db,
+      sessions: {
+        durable: true,
+        get: () => ({ userId: "vk:123:456", expiresAt: 9999999999 }),
+      },
+      origin: "https://example.test",
+      appId: "123",
+      secret: "synthetic-only-secret",
+      profileAllowed: () => enabled,
+      budgetAllowed: () => budget,
+    });
+    const request = (method = "GET", raw) =>
+      api(
+        new Request("https://example.test/api/staging/profile", {
+          method,
+          headers: {
+            Cookie: "stylist_vk=synthetic",
+            Origin: "https://example.test",
+            "X-CSRF-Intent": "ai-stylist",
+            "If-Match": '"profile-0"',
+          },
+          ...(raw ? { body: raw } : {}),
+        }),
+      );
+    assert.equal((await request()).status, 503);
+    assert.equal(
+      db
+        .prepare(
+          "SELECT count(*) n FROM sqlite_master WHERE name LIKE 'staging_profile%'",
+        )
+        .get().n,
+      0,
+    );
+    enabled = true;
+    assert.equal((await request()).status, 200);
+    assert.equal((await request("PUT", "я".repeat(8193))).status, 413);
+    const mutation = JSON.stringify({
+      ...emptyProfileDraft(),
+      mutationId: randomUUID(),
+    });
+    enabled = false;
+    assert.equal((await request("PUT", mutation)).status, 503);
+    enabled = true;
+    budget = false;
+    assert.equal((await request("PUT", mutation)).status, 503);
+    assert.equal(
+      db.prepare("SELECT count(*) n FROM staging_profiles").get().n,
+      0,
+    );
   } finally {
     db.close();
   }

@@ -80,19 +80,21 @@ export function createVkProfileStore({
               "SELECT hash,result FROM staging_profile_receipts WHERE owner=? AND mutation=?",
             )
             .get(owner, mutation.mutationId);
+          const current = read(owner);
           if (receipt) {
             if (receipt.hash !== hash)
               throw fail("profile_mutation_conflict", 409);
             const profile = JSON.parse(receipt.result);
             if (
               !validStoredProfile(profile) ||
-              profile.lastMutationId !== mutation.mutationId
+              profile.lastMutationId !== mutation.mutationId ||
+              !current.profile ||
+              current.profile.revision < profile.revision
             )
               throw new Error("corrupt_receipt");
             db.exec("COMMIT");
             return { profile, etag: profileEtag(profile.revision) };
           }
-          const current = read(owner);
           if (current.etag !== ifMatch) throw fail("profile_stale", 412);
           if (
             db

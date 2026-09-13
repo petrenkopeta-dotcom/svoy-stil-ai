@@ -13,6 +13,7 @@ import { DatabaseSync } from "node:sqlite";
 import { startStagingServer } from "./stagingServer.mjs";
 import { randomUUID } from "node:crypto";
 import { emptyProfileDraft } from "../src/vkProfileContract.js";
+import { createVkProfileController } from "../src/vkProfileController.js";
 import {
   createVkStagingClient,
   vkJourneyError,
@@ -553,4 +554,52 @@ test("HTTP profile bounds, CSRF and corrupt storage fail safely without changing
   assert.deepEqual(await (await f.request("wardrobe", { cookie })).json(), {
     items: [],
   });
+});
+
+test("profile controller verifies real HTTP save and recovers lost PUT/readback after process restart", async (t) => {
+  const f = await fixture(t, { profiles: true }),
+    cookie = await f.login();
+  let lose = "",
+    writes = 0;
+  const controller = createVkProfileController({
+    fetchImpl: async (url, options) => {
+      const response = await fetch(f.base + url, {
+        ...options,
+        headers: { ...options.headers, Origin: origin, Cookie: cookie },
+      });
+      if (options.method === "PUT") writes++;
+      if (
+        (lose === "put" && options.method === "PUT") ||
+        (lose === "get" && options.method === "GET")
+      ) {
+        lose = "";
+        await response.arrayBuffer();
+        throw new TypeError("synthetic_lost_response");
+      }
+      if (lose === "readback" && options.method === "PUT") lose = "get";
+      return response;
+    },
+  });
+  t.after(() => controller.close());
+  await controller.load();
+  controller.edit({
+    ...emptyProfileDraft(),
+    city: { name: "Москва", region: "Москва", source: "manual" },
+  });
+  await controller.save();
+  assert.equal(controller.snapshot().confirmed.revision, 1);
+  for (const failure of ["put", "readback"]) {
+    lose = failure;
+    const before = writes;
+    await assert.rejects(controller.save());
+    assert.equal(controller.snapshot().state, "unknown");
+    await assert.rejects(controller.save(), {
+      code: "profile_readback_required",
+    });
+    assert.equal(writes, before + 1);
+    await f.stop();
+    await f.start();
+    await controller.load();
+    assert.equal(controller.snapshot().confirmed.revision, writes);
+  }
 });
