@@ -235,3 +235,61 @@ symlink/junction enforcement и model SLO остаются OPEN.
 объясняется пользователю. Followup `a452a9a168efc6e9670eb77b4f4f32811f137aaf`
 не входит в cd0acb0 и этой приёмкой не покрыт. Его проверка — только по отдельному
 разрешению координатора. Нельзя трактовать этот отчёт как «все дефекты закрыты».
+
+## Bounded followup a452a9a — SEC-02 OPEN
+
+По отдельному разрешению координатора проверен exact
+`a452a9a168efc6e9670eb77b4f4f32811f137aaf`. Архив/серверный cwd:
+`C:/Users/petre/.codex/worktrees/cc12/AI-стилист 2/artifacts/security-vk-a452a9a`;
+собственный Vite4297 strictPort, после прогона остановлен. CPU handoff передан
+координатору и интегратору. Полный регресс/perf не запускались.
+
+Diff относительно46ef738: UI/client, их tests, garmentPhotoFlow **test** и doc.
+Server/API production, CI и budget/release gates не менялись.
+`node --test src/vkStagingClient.test.js server/garmentPhotoFlow.test.js` из архива:
+**12 PASS**. Новые независимые `server/vkRetry.security.test.js`, скопированные
+в архив без изменения production: **3 PASS**. Проверено:
+
+- только явный503 `staging_budget_blocked` сохраняет исходный launch в памяти;
+- повтор сохраняет исходный timestamp/body; success переключает на session;
+- 400/401/500, generic503 и network failure не разрешают replay;
+- late budget503 после logout/close не восстанавливает launch; closed client
+  не выполняет новых запросов.
+
+Один browser-run завершён **exit1,17 PASS/1 FAIL,47.1с**. Широкий initial config
+случайно обнаружил ещё четыре идентичных security-теста из integration archive.
+Поэтому уникальный итог — **13 PASS/1 FAIL**, не18 разных сценариев:
+7 авторских followup PASS,4 прежних security PASS,2 новых независимых PASS,
+1 новый независимый SEC-02 FAIL. Повторённые4 не усиливают evidence. Локальный
+config после результата ограничен двумя явными testDir для следующих циклов;
+повтор ради зелёного не запускался.
+
+Согласованные старые issues проверены на этом SHA: синхронный double confirm
+сохраняет один подтверждённый результат; lost response восстанавливается через
+refresh; retry после budget denial без Storage persistence; notice100 отображается;
+late analysis после logout/leave не восстанавливает фото UI. Четыре security
+сценария хранения/ошибок/отзыва capability также PASS.
+
+**SEC-02 — новый подтверждённый UX/correctness дефект, не auth bypass.**
+Минимальный независимый repro в
+`e2e/security-vk-staging-followup.spec.js`:
+
+1. Авторизованный UI; mock logout отвечает первый раз200 `{signedOut:true}`,
+   повторно401 `{code:"session_required"}`, как отозванная сессия.
+2. `button.evaluate(el => { el.click(); el.click(); })` для «Выйти» в одном tick.
+3. Получено `data-state="error"` и «Сессия завершена…» вместо `signedOut`.
+   Второй запрос обходит guard, потому что каждый onClick сначала увеличивает
+   generation и только затем вызывает run; первый successful handler становится
+   устаревшим. Это не потеря серверного отзыва, но результат выхода испорчен.
+
+Предложено владельцу: синхронный logout-in-flight ref guard **до** generation++,
+освобождаемый в finally; сохранить возможность logout прервать analysis/confirm.
+Не превращать любые401/неизвестный сетевой исход в ложное подтверждение logout.
+Production в security-задаче не менялся. Обычный regression без skip/todo должен
+падать до исправления SEC-02; **новый тестовый commit нельзя интегрировать как
+зелёный поверх одного a452a9a**.
+
+MERGE-review followup: **HOLD по SEC-02**, без общего утверждения о закрытии
+дефектов. DEPLOY-NO-GO и прежние Linux/container/perf/model/provider ограничения
+сохраняются. Следующий короткий regression — только на разрешённом новом SHA:
+double logout плюс priority/logout-cancellation; текущие failures не стирать.
