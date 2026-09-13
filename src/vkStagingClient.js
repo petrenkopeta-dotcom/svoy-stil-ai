@@ -5,7 +5,8 @@ export function createVkStagingClient({
   timeoutMs = 20_000,
 } = {}) {
   const pending = new Set();
-  let closed = false;
+  let closed = false,
+    launchEpoch = 0;
   const fail = (code, status) =>
     Object.assign(new Error(code), { code, status });
   const request = async (route, method = "GET", body, binary = false) => {
@@ -67,8 +68,23 @@ export function createVkStagingClient({
     async login() {
       if (!launch) return request("session");
       const credentials = launch;
+      const currentEpoch = launchEpoch;
       launch = "";
-      return request("vk-session", "POST", credentials);
+      try {
+        return await request("vk-session", "POST", credentials);
+      } catch (error) {
+        // Only a definite pre-login budget denial permits retrying this launch.
+        // Its original timestamp is untouched; the server still enforces freshness.
+        if (
+          !closed &&
+          currentEpoch === launchEpoch &&
+          error.status === 503 &&
+          error.code === "staging_budget_blocked"
+        )
+          launch = credentials;
+        if (error.status === 400) throw fail("vk_launch_rejected", 400);
+        throw error;
+      }
     },
     wardrobe: () => request("wardrobe"),
     capabilities: () => request("capabilities"),
@@ -103,10 +119,13 @@ export function createVkStagingClient({
       return readBack;
     },
     async logout() {
+      launchEpoch++;
+      launch = "";
       for (const controller of pending) controller.abort();
       return request("logout", "POST", "");
     },
     close() {
+      launchEpoch++;
       closed = true;
       for (const controller of pending) controller.abort();
       launch = "";
@@ -115,7 +134,7 @@ export function createVkStagingClient({
 }
 
 export function vkJourneyError(error) {
-  if (error.status === 401)
+  if (error.status === 401 || error.code === "vk_launch_rejected")
     return {
       state: "error",
       message: "Сессия завершена. Откройте приложение заново из VK.",

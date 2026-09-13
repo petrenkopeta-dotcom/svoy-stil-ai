@@ -17,7 +17,8 @@ export function VkStagingApp() {
     [color, setColor] = useState("blue");
   const [message, setMessage] = useState("");
   const generation = useRef(0),
-    urls = useRef(new Set());
+    urls = useRef(new Set()),
+    operation = useRef();
   const clearPhotos = () => {
     for (const url of urls.current) URL.revokeObjectURL(url);
     urls.current.clear();
@@ -33,6 +34,8 @@ export function VkStagingApp() {
   };
   const run = async (busy, action) => {
     const current = generation.current;
+    if (operation.current === current) return;
+    operation.current = current;
     setState(busy);
     setMessage("");
     try {
@@ -45,6 +48,8 @@ export function VkStagingApp() {
           (!signedIn ? "Гардероб не загружен. " : "") + result.message,
         );
       }
+    } finally {
+      if (operation.current === current) operation.current = undefined;
     }
   };
   const refresh = async (active) => {
@@ -71,12 +76,14 @@ export function VkStagingApp() {
       );
     }
   };
+  const login = async (active) => {
+    await client.login();
+    if (!active()) return;
+    setSignedIn(true);
+    await refresh(active);
+  };
   useEffect(() => {
-    run("loading", async (active) => {
-      await client.login();
-      if (active()) setSignedIn(true);
-      await refresh(active);
-    });
+    run("loading", login);
     return () => {
       generation.current++;
       client.close();
@@ -110,6 +117,9 @@ export function VkStagingApp() {
           logout: "Завершаем сессию…",
         }[state] || message}
       </p>
+      {!signedIn && !busy && state !== "signedOut" && (
+        <button onClick={() => run("loading", login)}>Повторить вход</button>
+      )}
       {signedIn && (
         <>
           <ul aria-label="Личный гардероб">
@@ -119,6 +129,13 @@ export function VkStagingApp() {
               </li>
             ))}
           </ul>
+          {photos.length >= 100 && (
+            <p>
+              Этот экран показывает не более 100 последних фото-вещей. Более
+              старые могут оставаться на сервере; просмотр следующих страниц
+              пока недоступен.
+            </p>
+          )}
           <div aria-label="Сохранённые вещи">
             {photos.map((photo) => (
               <img
