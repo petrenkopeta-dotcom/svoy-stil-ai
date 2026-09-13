@@ -229,3 +229,32 @@ test("budget-denied launch retries unchanged, expires server-side, and clears on
   assert.equal(pendingCalls.at(-1), "/api/staging/session");
   pendingClient.close();
 });
+
+test("cancel aborts pending work but leaves authenticated client available for read-back", async () => {
+  let requestSignal;
+  const client = createVkStagingClient({
+    fetchImpl: async (url, options) => {
+      if (url.endsWith("capabilities")) return Response.json({ photos: true });
+      if (url.endsWith("analyze"))
+        return new Promise((resolve, reject) => {
+          requestSignal = options.signal;
+          options.signal.addEventListener(
+            "abort",
+            () => reject(new Error("cancelled")),
+            { once: true },
+          );
+        });
+      return Response.json({ items: [] });
+    },
+  });
+  const pending = assert.rejects(
+    client.analyze(new Blob(["synthetic"], { type: "image/png" })),
+    /cancelled/,
+  );
+  while (!requestSignal) await new Promise((resolve) => setImmediate(resolve));
+  client.cancel();
+  await pending;
+  assert.equal(requestSignal.aborted, true);
+  assert.deepEqual(await client.wardrobe(), { items: [] });
+  client.close();
+});

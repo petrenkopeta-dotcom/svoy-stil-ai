@@ -1,3 +1,4 @@
+import { openVkAdd, chooseVkMetadata } from "./vkJourney.helpers.js";
 import { test, expect } from "@playwright/test";
 
 test("security: VK launch and wardrobe do not enter browser persistence or console", async ({
@@ -36,7 +37,8 @@ test("security: VK launch and wardrobe do not enter browser persistence or conso
     });
   });
   await page.goto(`/?vk_app_id=123&sign=${marker}`);
-  await page.getByRole("button", { name: "Сохранить вещь без фото" }).click();
+  await chooseVkMetadata(page);
+  await page.getByRole("button", { name: "Сохранить без фото" }).click();
   await expect(page.getByRole("status")).toContainText("повторно прочитана");
   expect(new URL(page.url()).search).toBe("");
   expect(
@@ -79,11 +81,14 @@ test("security: failed save and logout never claim server confirmation", async (
     );
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Сохранить вещь без фото" }).click();
+  await chooseVkMetadata(page);
+  await page.getByRole("button", { name: "Сохранить без фото" }).click();
   await expect(page.getByRole("status")).toContainText(
     /не подтверждено|недоступна/,
   );
-  await expect(page.getByRole("list", { name: "Личный гардероб" })).toBeEmpty();
+  await expect(page.getByRole("list", { name: "Личный гардероб" })).toHaveCount(
+    0,
+  );
   await page.getByRole("button", { name: "Выйти", exact: true }).click();
   await expect(page.getByRole("status")).toContainText(
     /не подтверждён|недоступна/,
@@ -163,7 +168,12 @@ test("security: revoked photo capability blocks transmission of selected origina
     return route.fulfill({ json: { authenticated: true, items: [] } });
   });
   await page.goto("/");
-  await page.locator('input[type="file"]').setInputFiles({
+  await openVkAdd(page);
+  const originalInput = await page
+    .locator('input[type="file"]')
+    .elementHandle();
+  expect(originalInput).not.toBeNull();
+  await originalInput.setInputFiles({
     name: "synthetic.png",
     mimeType: "image/png",
     buffer: Buffer.from("synthetic-original"),
@@ -171,5 +181,12 @@ test("security: revoked photo capability blocks transmission of selected origina
   await expect(page.getByRole("status")).toContainText("недоступна");
   expect(capabilities).toBe(2);
   expect(analyzes).toBe(0);
-  expect(await page.locator('input[type="file"]').inputValue()).toBe("");
+  // Inspect the original, now detached input: a fresh element would hide a
+  // regression that retained the user's selected source in the old control.
+  expect(
+    await originalInput.evaluate((input) => ({
+      value: input.value,
+      files: input.files.length,
+    })),
+  ).toEqual({ value: "", files: 0 });
 });

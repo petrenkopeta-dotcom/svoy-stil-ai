@@ -1,7 +1,5 @@
 import { defineConfig } from "@playwright/test";
 export default defineConfig({
-  testDir: ".",
-  testMatch: "vkStagingClient.browser.spec.js",
   workers: 1,
   reporter: "line",
   outputDir: "../test-results/vk-journey",
@@ -12,6 +10,18 @@ export default defineConfig({
     screenshot: "off",
     video: "off",
   },
+  projects: [
+    {
+      name: "vk-client",
+      testDir: ".",
+      testMatch: /vkStaging(Client|Design)\.browser\.spec\.js$/,
+    },
+    {
+      name: "vk-security",
+      testDir: "../e2e",
+      testMatch: /(?:^|[\\/])(security-)?vk-staging(-followup)?\.spec\.js$/,
+    },
+  ],
   webServer: {
     command: "npm run dev -- --host 127.0.0.1 --port 4210 --strictPort",
     cwd: "..",
