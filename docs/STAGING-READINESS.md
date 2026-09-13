@@ -1,117 +1,138 @@
-# Closed staging readiness — 2026-09-10
+# Готовность закрытого staging — 13.09.2026
 
-Decision: **NO-GO for user-photo staging**. No hosting was purchased or deployed,
-no user photo was transmitted, no real Telegram/email message was sent.
+**Решение: NO-GO для пользовательских фото и платного запуска.** Хостинг не
+покупался и не развёртывался в рамках этой проверки; фото пользователей не
+передавались, реальные Telegram/email уведомления не отправлялись.
 
-## Repository and local boundary
+Актуализировано с согласия координатора по main
+`3b1202677e7721d1d32a4089a6fcbdaf44f00759`,
+[IMPLEMENTATION-2026-09-10](IMPLEMENTATION-2026-09-10.md),
+[runtime/cv/README](../runtime/cv/README.md) и коду. Этот документ заменяет
+устаревшее описание bootstrap без декодирования и моделей; факт закрытого CLI
+остаётся верным. Смета и порядок запуска:
+[BUDGET-AND-LAUNCH](BUDGET-AND-LAUNCH.md).
 
-Baseline after fetch: `aaa9be3`. Local onboarding commit `b7803bf` was inspected
-and preserved as `87baece` in the isolated worktree. Original source files were
-read only; Git worktree operations updated shared Git metadata only.
+## Реализация и её ограничения
 
-The local inventory at `qa-evidence/staging-file-inventory.md` enumerates 389
-tracked files and 1028 individual ignored local entries; 5719 ignored files total
-including dependency/build/cache contents. It is deliberately excluded from Git.
-The five CV source/manifest files were inspected with a secret-pattern scan;
-no match was found, which is not a proof that every local file is secret-free.
-None was copied or published.
-
-| File or group | Role | Action |
+| Область | Реализовано | Чего это не доказывает |
 |---|---|---|
-| `server/cvAutoLocal.mjs` | Old disk-based CV entry | Disable processing before any file creation; detach research worker |
-| Local `prototypes/cv_auto_01/worker_service.py` | Research worker, imports run_spike, writes overlays | Keep local; never deploy |
-| Local `run_spike.py`, `metrics.py` | Research/measurement helpers | Keep local; do not import from server |
-| Local model inventory/requirements | Historical model pins | Retain locally; not a verified Linux lock |
-| `runtime/cv/worker_service.py` | Safe bootstrap | Explicit missing-capability failure; no model or image loading |
-| `src/localCvAuto.js` | Client CV transport | Reject missing safety, pre-cancelled calls; 20s deadline; distinct timeout |
-| `src/photoStorage.js` | Local persistence | Reject unvalidated images, including legacy migration |
-| `src/main.jsx` | Reference saving | Remove original rectangular crop fallback |
-| `src/referenceDraft.js`, `ReferenceExperience.jsx` | Reference draft held original in IndexedDB | Memory-only drafts, release on close/error; existing historical browser records are not automatically deleted |
-| `server/authBff.mjs` | Legacy external provider BFF | Require exact-byte validator; wire durable SQLite and portable CLI entry |
-| `server/vkAuth.mjs`, `stagingApi.mjs` | New server contract | Signed VK identity and owner-keyed metadata; photos denied |
-| `server/budgetGuard.mjs` | Budget policy, latch and outbox | Default blocked; no real billing/controller transport configured |
-| `deploy/` | Linux security templates | Reviewable templates, not deployed or accepted |
-| `.env.local`, QA/eval/datasets/photos | Private local material | Do not modify, copy to GitHub, or delete |
+| Memory-only runtime | Decode/orientation/metadata stripping; GroundingDINO/SAM2 адаптеры; отдельные presence/semantic verifier; проверка точных PNG и SHA-256; нулевой скрытый RGB | Реальные веса не запускались; независимость/качество checkpoint-набора и полный transitive lock не приняты |
+| Worker lifecycle | Одна задача, deadline с cold start, отмена, hard kill зависшего процесса, fault без autorestart | Нет cold/warm/load замеров реального inference; 10с цель и 20с предел не доказанный CPU SLO |
+| Garment photo flow | Server-owned owner-bound кандидаты, TTL/memory bounds, повторная верификация при confirm, хранение точных разрешённых PNG в SQLite | Release predicate закрыт; клиентский флаг безопасности не даёт допуска |
+| HTTP API | VK session/session/wardrobe/logout; ограниченные photo analyze/confirm/read; ограничения тела/параллельности/deadline | В штатном CLI бюджет закрыт; запросы получают HTTP 503; environment bypass нет |
+| VK frontend | Opt-in VITE_VK_STAGING=true, восстановление сессии, приватные метаданные, save/read-back/logout, удаление launch query из истории | Одобренного пользовательского photo flow в этом UI пока нет; реальный VK launch не проверен |
+| Legacy source boundary | Старый disk-based CV path отключён; reference draft в памяти, без новых записей исходника в IndexedDB | Исторические пользовательские browser records не удалялись; очистка требует отдельного решения |
+| Budget | Durable default block и outbox 3500/4000 для Telegram+email; блокировка сохраняется после рестарта и смены месяца | Нет провайдерского ingestion/shutdown и реальных транспортов; свежий API response не гарантирует полноту начислений |
+| Linux deployment | Шаблоны deploy/, запрет autorestart/core dumps | Шаблоны не развёрнуты; host-level no swap/temp/proxy spooling/network и российская локация не приняты |
 
-## Acceptance matrix
+`productionApproved: false` и default-deny не снимаются на основании успешных
+синтетических тестов, даты конфигурации или self-report модели. Требование
+гардероба: хранить только одежду без человека/лица/фона, подтверждённую независимой
+проверкой именно сохранённых байтов. Текущие пороги моделей ещё не калиброваны.
 
-| Priority | Problem / correction | Evidence and remaining acceptance |
+## Доказательства проверок
+
+- **Сообщение координатора 13.09.2026:** повторный `npm run verify` на указанном
+  main прошёл: 489 Node tests, build, format и bundle checks. Автор этой
+  документационной итерации этот полный прогон не повторял.
+- **Исторические результаты из поручения:** 7 Python и 6 browser tests прошли.
+  Это не свежий прогон данной ветки и не гарантия CI на её exact head.
+- Python проверяет настоящие синтетические PNG/JPEG/WebP pixels и image encoding,
+  но инъецирует модельные контракты. Node lifecycle действительно завершает
+  зависший OS process. HTTP tests используют локальные сокеты/SQLite и synthetic
+  VK signatures; browser tests — отрисованный UI с synthetic responses.
+- Реальные веса, модельное качество, host-level no-disk, latency и реальный
+  VK phone journey такими тестами не подтверждены.
+
+Результаты текущих документационных проверок записываются в итоговом отчёте/PR,
+не подменяют результаты исходной кодовой базы.
+
+## Оставшиеся acceptance gates
+
+| Приоритет | Gate | Необходимое доказательство |
 |---|---|---|
-| P0 | Original written to temp disk → processing disabled | Negative test proves old worker not called. Actual safe inference still required |
-| P0 | Missing detector accepted → safety and storage fail closed | Missing/incomplete/error/cancel/timeout tests; actual pixel detector still missing |
-| P0 | Reference draft wrote original to IndexedDB → memory-only backend | Test proves IndexedDB is never opened; durable backend injection rejected; historical records require a separately authorized cleanup decision |
-| P0 | BFF could forward arbitrary crop → server validator required | Test accepted fixture separately; default validator absent, upload blocked |
-| P0 | Russian hosting / independent operation absent | Requires selected Russian account, TLS, private tester access, approved spend and phone test with laptop off |
-| P0 | Budget could overrun → reserve policy + durable default block | Unit tests of reserves/stale data/calendar latch/two channels. Provider ingestion/shutdown and top-up resume not implemented |
-| P1 | VK and durable owner separation absent → isolated API contract | HMAC tamper/app/expiry tests, two-user SQL isolation, restart/expiry sessions. Frontend/VK installation and real launch still required |
-| P1 | Windows-only BFF entry/session wiring → file URL + SQLite | Local tests; Linux CI must pass on exact PR head |
-| P1 | Formatting failure | All 14 baseline LF files pass Prettier directly from Git. CRLF worktree caused failure; `.gitattributes` pins LF |
-| P1 | Nested persistence tests omitted | Recursive test runner includes all src/server test files; 479 tests now pass locally |
-| P1 | 10s goal / 20s maximum unmeasured | Deadline is enforced for browser transport; no cold/warm or load evidence for real inference |
-| P1 | Legal readiness unknown | Separate qualified review of operator, consent, notices, retention and data-processing chain required |
+| P0 | Независимая модельная безопасность | Четыре роли/checkpoint-набора, проверенные хеши всех файлов, лицензии и совместимость; presence с person+face и semantic с garment labels; реальные adversarial испытания |
+| P0 | No-disk исходников на хосте | Запрет swap/core/temp/proxy buffering; отсутствие исходников в логах, дампах и backups; OS-level network denial worker |
+| P0 | Budget ≤5000 ₽ с тестами | All-in котировка, bound задержки биллинга, provider controller/stop, два канала, остаточные disks/IP/backups, без auto topup/scale/resume/month-reset |
+| P0 | Сохранность после budget stop | Явный срок и резерв хранения; никакого удаления по молчанию владельца; запрет использовать нулевой баланс как механизм остановки |
+| P0 | Российская инфраструктура | Выбранный российский регион/договор, TLS, isolation, доступ только согласованным тестерам; отдельное разрешение расходов и развёртывания |
+| P1 | Полный пользовательский сценарий | После release gates завершить photo UI; реальный VK launch, два владельца, save/read-back/logout и телефон при выключенном ноутбуке |
+| P1 | Реальная производительность | Cold/warm p50/p95/p99, peak RAM, нагрузка и overload; время всех четырёх моделей и повторного confirm verifier; соблюдение 20с с hard kill |
+| P1 | Linux reproducibility | Полный dependency lock и checks на exact PR head; успешный CI не означает разрешение деплоя |
+| P1 | Правовая готовность | Квалифицированная оценка оператора, согласий, уведомлений, сроков и цепочки обработки; наличие российского хоста само по себе не заключение |
 
-## Linux reproduction and acceptance boundary
+## Воспроизведение после отдельного разрешения среды
 
-From a fresh Git clone on Linux with Node 22 (latest patched 22.x) or Node 24:
+Для чистого Linux checkout с Node 22/24, без установки ML weights:
 
 ```sh
 npm ci --ignore-scripts
 npm run verify
 npx playwright install --with-deps chromium
 CI=true npm run test:browser
+python -m pip install -r runtime/cv/requirements-test.txt
+python -B -m unittest discover -s runtime/cv -p 'test_*.py'
 ```
 
-SQLite is included in Node; no database service or model download is needed for
-these synthetic tests. CI uses Ubuntu and Node 22. `.cv-auto-runtime`, model
-weights and Python ML packages must not be restored automatically on the laptop.
+Это команды для проверки, не выполненный в данной итерации запуск и не
+разрешение создавать платную инфраструктуру. В CI присутствуют отдельные
+`verify`, `cv-contract`, `browser-smoke`; текущий статус конкретного PR следует
+проверить отдельно. `.cv-auto-runtime`, model weights и ML-зависимости не
+восстанавливать на ноутбуке автоматически.
 
-`server/stagingServer.mjs` requires `STAGING_DATA_DIR`, `STAGING_ORIGIN` (HTTPS),
-`VK_APP_ID` and `VK_APP_SECRET` via a private environment file. Start with
-`node server/stagingServer.mjs`. Its expected current behavior is HTTP 503 for
-every request. It is a closed deployment gate, not a functioning staging app.
-`deploy/staging.service` prohibits restart and core dumps; swap prohibition must
-also be verified on the host. Do not enable at boot after a budget block. Review
-the Nginx fragment inside a real private TLS vhost; disable access/query logs
-for the entire Mini App because launch URLs contain credentials.
+`server/stagingServer.mjs` требует `STAGING_DATA_DIR`, `STAGING_ORIGIN` (HTTPS),
+`VK_APP_ID`, `VK_APP_SECRET` в приватном окружении. `node server/stagingServer.mjs`
+оставляет бюджетный gate закрытым; нормальные API-маршруты существуют для
+переданных зависимостей, но это не разрешение заменить gate на `true`.
 
-Before enabling photos: install pinned models separately on approved Russian
-infrastructure, verify cryptographic model hashes, port decoding/segmentation to
-memory streams, implement person/face AND residual-background checks on exact
-cutout bytes, bound decoder pixels/concurrency/queues, abort and kill work by 20s,
-and prove no input in swap, tempfiles, proxy spooling, crash dumps or backups.
-Measure cold and warm p50/p95/p99 and overload behavior on synthetic/approved
-local fixtures. No such performance result currently exists. A paid benchmark
-requires approval of its exact maximum cost before provisioning.
+Перед реальным запуском проверить весь TLS vhost и запрет access/query logs:
+launch URL содержит credentials. Не включать автоматический старт после budget
+block. Доказать отсутствие исходников в swap, tempfiles, proxy spooling, core
+dumps и backups. SQLite/бэкап содержит только разрешённые PNG и необходимые
+метаданные; исходные изображения в них не допускаются.
 
-## Tariff snapshot and provisional envelope
+## Бюджет: новая проверка вместо старой предварительной оценки
 
-Official sources checked 2026-09-10:
+В [BUDGET-AND-LAUNCH](BUDGET-AND-LAUNCH.md) приведены три расчётных конверта,
+источники 13.09, все неподтверждённые строки и будущая последовательность запуска.
+Публичный месячный тариф Timeweb Cloud-80 в СПб 2000 ₽ проверен непосредственно
+переключателем «1 мес без скидки», а не только делением годовой цены на 0,9.
+Но полная принятая котировка и hard cap пока отсутствуют.
 
-- [Timeweb Cloud cloud servers](https://timeweb.cloud/services/cloud-servers):
-  Moscow MSK 80, 4 CPU/8 GB/80 GB, displayed 1800 RUB/month with the 12-month
-  10% discount selected. Dividing by 0.9 gives a provisional 2000 RUB/month
-  undiscounted inference; this is NOT a checkout quote. Do not prepay a year.
-- [Selectel cloud server pricing](https://selectel.ru/services/cloud/servers/)
-  and [billing model](https://docs.selectel.ru/cloud-servers/about/payment/):
-  component/pay-as-you-go pricing requires a selected pool/configuration quote;
-  stopping compute is not evidence that every resource stopped accruing costs.
-- [Yandex Cloud budgets](https://yandex.cloud/en/docs/billing/concepts/budget)
-  provide spend monitoring and threshold actions. Treat notifications as input to
-  an independently verified controller, not a hard spending ceiling.
+Критические ограничения: Timeweb удаляет ресурсы через 7 дней после блокировки
+за отсутствие средств и автоматически включает их после пополнения; Selectel
+VDS продолжает начисления при выключении/блокировке и удаляет при непогашенном
+долге через 14 дней; Yandex stop прекращает compute, но не disks/snapshots/IP.
+Официальные ссылки и последствия разобраны в бюджетном документе.
 
-Provisional allocation, NOT an offer or approved spend: 2000 RUB compute,
-500 RUB IP/traffic/backups, 500 RUB operational/notification reserve, 1000 RUB
-mandatory/storage/late-billing reserve, 1000 RUB unused headroom = 5000 total.
-Every reserve needs a real provider quote and a bounded retention horizon.
-An indefinitely retained billed disk cannot fit under a finite lifetime reserve;
-agree an explicit post-block retention/payment policy without automatic deletion.
-No CPU configuration is claimed to meet inference latency. GPU feasibility under
-this envelope is unproven; do not provision or raise the ceiling automatically.
+**Следующий шаг:** согласовать all-in котировку и post-stop retention с владельцем
+через координатора, затем реализовать и проверить provider controller. Параллельно
+продолжать бесплатную подготовку модельных/инфраструктурных gates. Никаких платежей,
+публикации, расширения лимита или снятия default deny автоматически.
 
-## Remaining work before any go decision
+## Сообщённые изменения параллельной серверной ветки
 
-Implement and independently validate the memory-only image pipeline; integrate
-the frontend with the Russian VK backend and photo storage; connect and test the
-provider budget controller, both notification destinations and explicit funded
-resume; verify private Linux deployment, real VK launch and laptop-off phone
-journey. These are missing implementation/infrastructure steps, not waived tests.
+13.09 профильная серверная задача сообщила о подготовке `docs/SERVER-REPRODUCTION.md`,
+loopback health на 8789 (`/healthz=200`, `/readyz=503`) и preflight с постоянным
+`exit 2`/`deploymentReady=false`. Эти изменения **ещё не сверены здесь и не входят
+в базу 3b12026**. Автор указал
+[SHA 05dc895a](https://github.com/petrenkopeta-dotcom/svoy-stil-ai/commit/05dc895a295edb650adf872dd0ac03a286638f25);
+PR ещё не создан. Diff и Linux CI должен проверить координатор при интеграции.
+Default billing/photo deny остаются. Шаблоны tmpfs/no swap/core/network не
+доказывают no-disk реального хоста.
+
+Та же задача сообщила: сначала Windows прогон дал 490/491 из-за perf p95
+1641 >1500 мс; после concurrency=2 — 491/491, format/build/bundle PASS.
+Это результат другой ветки со слов её автора, не реальный model SLO и не
+повторный прогон main. Локального Docker у неё нет; Linux Docker CI ожидается.
+Не переносить эти числа в основной раздел доказательств без exact SHA.
+
+## Историческая локальная граница
+
+Исторические inventory/QA/eval и датасеты остаются локальными и исключены из Git.
+Ранее упомянутые 389 tracked/5719 ignored и staging inventory относятся к снимку
+10.09, не к текущему checkout. Старые коммиты `aaa9be3`, `b7803bf`, `87baece` —
+история той проверки, не актуальная база. Исходная папка OneDrive используется
+только read-only; разрешённые Git worktree операции изменяют общие Git metadata,
+но не пользовательские исходники. Секреты не публикуются, пользовательские файлы
+не удаляются. Интеграцию и merge этой волны выполняет координатор.
