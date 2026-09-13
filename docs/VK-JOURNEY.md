@@ -129,3 +129,30 @@ Scoped исправления в отдельной ветке `codex/vk-journey
 Профильный browser config4210: **7/7 PASS**, exit0,22.9с со штатным scoped escalation.
 Точечные Node client/flow: **12/12 PASS**. Production server в followup не изменён.
 Это synthetic correctness evidence, не работа с реальным VK/моделью/фото пользователей.
+
+## SEC-02: синхронный двойной выход
+
+Независимая security-проверка точного `a452a9a` обнаружила: два синхронных click «Выйти»
+вызывали2 POST logout, потому что каждый click повышал generation перед общим guard.
+Ответы200/signedOut и401/session_required оставляли UI в error. Исходный independent FAIL
+сохранён security в коммите `5e8c734f5ab367dddc394dcb34461290d2fc3219`.
+Наш focused baseline regression также FAIL: success-сценарий error вместо signedOut;
+failure-first сценарий самовольно делал второй запрос вместо ожидания явного повтора.
+
+Минимальный production fix только в `src/VkStagingApp.jsx`: отдельный синхронный
+logoutPending ref захватывается ДО generation++; освобождается после await run в finally.
+Новая logout-операция не может начаться до этого finally, поэтому старое завершение
+не снимает lock нового выхода. Generation-based guard остальных операций сохранён;
+logout по-прежнему приоритетен над анализом/подтверждением. Server/API/gates неизменны.
+
+После явного CPU handoff от security:
+
+- `node --test src/vkStagingClient.test.js server/garmentPhotoFlow.test.js`:12/12 PASS.
+- `npx playwright test --config src/vkStagingClient.browser.config.js --grep 'logout sync double|late analysis|logout interrupts'`:5/5 PASS,exit0,13.6с.
+- Exactly1 POST и signedOut после sync doubleclick; failure→явный retry без вечного lock;
+  logout during analysis/confirm; late saved-response после logout не возвращает фото/state.
+- Browser4210, strictPort/reuseExistingServer:false, config cwd этого worktree;
+  scoped escalation для штатного Windows teardown. Полный/perf-набор не запускался по указанию координатора.
+
+Изменены только UI, соответствующий browser spec и этот профильный документ.
+Независимый ретест нового SHA остаётся задачей security; собственный PASS не заменяет его.

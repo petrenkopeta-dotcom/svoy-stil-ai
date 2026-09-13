@@ -304,3 +304,140 @@ for (const exit of ["logout", "leave"])
       completeAnalysis();
     }
   });
+
+for (const failFirst of [false, true])
+  test(`logout sync double click is single-flight and retryable: failFirst=${failFirst}`, async ({
+    page,
+  }) => {
+    let logouts = 0;
+    await page.route("**/api/staging/**", (route) => {
+      if (route.request().url().endsWith("logout")) {
+        logouts++;
+        if (failFirst && logouts === 1)
+          return route.fulfill({
+            status: 503,
+            json: { code: "synthetic_logout_failed" },
+          });
+        if (logouts > (failFirst ? 2 : 1))
+          return route.fulfill({
+            status: 401,
+            json: { code: "session_required" },
+          });
+        return route.fulfill({ json: { signedOut: true } });
+      }
+      return route.fulfill({
+        json: { authenticated: true, photos: false, items: [] },
+      });
+    });
+    await page.goto("/");
+    await expect(page.getByRole("status")).toHaveAttribute(
+      "data-state",
+      "empty",
+    );
+    const doubleClick = () =>
+      page
+        .getByRole("button", { name: "Выйти", exact: true })
+        .evaluate((button) => {
+          button.click();
+          button.click();
+        });
+    await doubleClick();
+    if (failFirst) {
+      await expect(page.getByRole("status")).toHaveAttribute(
+        "data-state",
+        "unavailable",
+      );
+      expect(logouts).toBe(1);
+      await doubleClick();
+    }
+    await expect(page.getByRole("status")).toHaveAttribute(
+      "data-state",
+      "signedOut",
+    );
+    expect(logouts).toBe(failFirst ? 2 : 1);
+    await expect(
+      page.getByRole("button", { name: "Выйти", exact: true }),
+    ).toHaveCount(0);
+  });
+
+test("logout interrupts confirmation and ignores its late saved response", async ({
+  page,
+}) => {
+  let releaseConfirm,
+    finishReply,
+    logouts = 0;
+  const hold = new Promise((resolve) => {
+    releaseConfirm = resolve;
+  });
+  const replied = new Promise((resolve) => {
+    finishReply = resolve;
+  });
+  await page.route("**/api/staging/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("analyze"))
+      return route.fulfill({
+        json: {
+          candidates: [
+            {
+              id: "candidate",
+              label: "shirt",
+              preview: `data:image/png;base64,${png.toString("base64")}`,
+            },
+          ],
+        },
+      });
+    if (path.endsWith("confirm")) {
+      await hold;
+      try {
+        await route.fulfill({ json: saved });
+      } catch {
+      } finally {
+        finishReply();
+      }
+      return;
+    }
+    if (path.endsWith("logout")) {
+      logouts++;
+      return route.fulfill({ json: { signedOut: true } });
+    }
+    return route.fulfill({
+      json: { authenticated: true, photos: true, items: [] },
+    });
+  });
+  try {
+    await page.goto("/");
+    await page.locator('input[type="file"]').setInputFiles({
+      name: "synthetic.png",
+      mimeType: "image/png",
+      buffer: png,
+    });
+    const started = page.waitForRequest("**/photos/confirm");
+    await page.getByRole("button", { name: "Подтвердить сохранение" }).click();
+    await started;
+    await expect(page.getByRole("status")).toHaveAttribute(
+      "data-state",
+      "confirming",
+    );
+    await page
+      .getByRole("button", { name: "Выйти", exact: true })
+      .evaluate((button) => {
+        button.click();
+        button.click();
+      });
+    await expect(page.getByRole("status")).toHaveAttribute(
+      "data-state",
+      "signedOut",
+    );
+    releaseConfirm();
+    await replied;
+    await page.evaluate(() => new Promise(requestAnimationFrame));
+    expect(logouts).toBe(1);
+    await expect(page.getByRole("status")).toHaveAttribute(
+      "data-state",
+      "signedOut",
+    );
+    await expect(page.locator("img")).toHaveCount(0);
+  } finally {
+    releaseConfirm();
+  }
+});
