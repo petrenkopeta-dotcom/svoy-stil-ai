@@ -170,3 +170,68 @@ CV пригоден к интеграции как закрытая research-з�
 Реальные loader/API/качество/recall/SLO/память не проверены. Commercial NO-GO
 для semantic checkpoint и неполный transitive dependency lock сохраняются;
 это не юридическая или host-compliance валидация.
+
+## Совместный candidate cd0acb0 — независимый ретест
+
+Проверка разрешена координатором для точного
+`cd0acb0ba00d6577036c8ee9260098ac1ea07e83`. Динамические прогоны начаты после
+сообщения интегратора «CPU ОСВОБОЖДЕН», выполнялись последовательно.
+Авторские результаты не подменяют приведённые ниже независимые результаты.
+
+Архив Git, серверный cwd:
+`C:/Users/petre/.codex/worktrees/cc12/AI-стилист 2/artifacts/security-integration-cd0acb0`.
+Production и тестовые файлы архива не редактировались. Использованы существующие
+локальные npm dependencies; модели/платные ресурсы не устанавливались.
+
+Сверка Git diff подтвердила отсутствие отличий в production VK от46ef738,
+runtime/cv от191bc6f, deploy/scripts/package от05dc895 и security tests от7f41e7.
+Новый CI step запускает два отдельных journey-теста после общего browser suite;
+основной config сам их не обнаруживает. Concurrency2 сохраняет discovery и
+ненулевой exit при отказе, что подтверждено настоящим full-run FAIL ниже.
+
+| Проверка exact SHA                                                    | Независимый результат                                                                                                   |
+| --------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `node scripts/run-tests.mjs` из архива                                | **520/521 PASS, exit1**, единственный FAIL — существующий perf p95=1610мс при лимите1500мс, p50=828мс                   |
+| `node --test src/stylistCandidateEngine.test.js` изолированно         | **8/8 PASS, exit0**; порог не менялся, full-run FAIL не отменён                                                         |
+| Bundled Python `-B -m unittest discover -s runtime/cv -p 'test_*.py'` | **14/14 PASS**; синтетические модели/пиксели                                                                            |
+| Format, build, bundle, demo build/boundary                            | **PASS**,545960B/5JS chunks                                                                                             |
+| Repository boundary                                                   | **451 tracked PASS**, отдельный временный `GIT_INDEX_FILE` + `git read-tree` exact SHA; индекс рабочей ветки не менялся |
+| Git diff check                                                        | **PASS**                                                                                                                |
+| Основной browser                                                      | **10/10 PASS, exit0, 33.3с**                                                                                            |
+| Отдельный journey browser                                             | **2/2 PASS, exit0, 8.0с**                                                                                               |
+
+Full-run perf samples (мс):422,531,563,593,625,641,656,828,843,860,875,890,891,969,1610.
+Прогон выполнен уже с concurrency2 и без параллельного собственного browser.
+Причина вариабельности не доказана; заявлять полный независимый521/521 PASS
+для этого candidate нельзя. Повторять весь suite до получения зелёного не стали.
+
+Browser использовал собственные strictPort-серверы из указанного cwd:
+обычный UI4295, demo preview4296, VK staging4297. Ignored config
+`artifacts/integration-browser.config.mjs` импортирует exact основной config
+и меняет только paths/ports, управление локальными серверами и global timeout;
+mobile viewport, проекты, assertions, retries и тесты сохранены. Trace/screenshots/
+video выключены. Отдельный journey использует тот же VK сервер4297 и config
+`artifacts/integration-journey-browser.config.mjs`, последовательно после10 тестов.
+Raw результаты находятся только в `artifacts/integration-cd0acb0-*.txt`.
+
+GitHub connector для exact SHA вернул пустые workflow_runs и combined statuses;
+workflow wrapper ограничен PR events, поэтому это не доказательство отсутствия
+любых иных запусков. Интегратор также сообщил отсутствие PR и локального Docker.
+**Linux/container CI не подтверждён и остаётся блокером финальной merge-приёмки.**
+
+**MERGE-review:** security-контракты закрытой интеграции проходят проверенные
+негативные сценарии, новых подтверждённых security-регрессий не найдено.
+Безусловного одобрения merge нет: нужен обязательный Linux/container CI и явное
+решение координатора по нестабильному perf-check. Авторский521 PASS и
+изолированный8 PASS не заменяют независимый full-run520/521.
+
+**DEPLOY-NO-GO:** default budget/photo gates не снимать. Реальные модели, licenses,
+полный platform lock, provider billing, российский хост/no-disk/egress/swap,
+symlink/junction enforcement и model SLO остаются OPEN.
+
+Отдельно **OPEN в этом candidate** (repro сообщил владелец VK, здесь заново
+не воспроизводились): двойной синхронный confirm даёт2POST при одной записи и
+вторичный404 портит UI; после initial budget503 нет retry-login; LIMIT100 не
+объясняется пользователю. Followup `a452a9a168efc6e9670eb77b4f4f32811f137aaf`
+не входит в cd0acb0 и этой приёмкой не покрыт. Его проверка — только по отдельному
+разрешению координатора. Нельзя трактовать этот отчёт как «все дефекты закрыты».
