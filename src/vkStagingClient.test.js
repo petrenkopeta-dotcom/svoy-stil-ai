@@ -31,7 +31,10 @@ test("failed read-back never becomes successful save", async () => {
   const client = createVkStagingClient({
     fetchImpl: async () => ({ ok: true, json: async () => ({ items: [] }) }),
   });
-  await assert.rejects(client.save([{ id: "1" }]), /readback_mismatch/);
+  await assert.rejects(
+    client.save([{ id: "1", category: "shirt", color: "blue" }]),
+    /readback_mismatch/,
+  );
 });
 
 test("photo gate denies before any image is transmitted", async () => {
@@ -256,5 +259,37 @@ test("cancel aborts pending work but leaves authenticated client available for r
   await pending;
   assert.equal(requestSignal.aborted, true);
   assert.deepEqual(await client.wardrobe(), { items: [] });
+  client.close();
+});
+
+test("wardrobe client rejects duplicate IDs and limits before sending, and validates readback", async () => {
+  let calls = 0,
+    items = [];
+  const client = createVkStagingClient({
+    fetchImpl: async (_, options) => {
+      calls++;
+      if (options.method === "PUT") {
+        items = JSON.parse(options.body);
+        return Response.json({ saved: true });
+      }
+      return Response.json({ items });
+    },
+  });
+  const one = { id: "1", category: "shirt", color: "blue" };
+  for (const invalid of [
+    [one, one],
+    Array.from({ length: 101 }, (_, i) => ({ ...one, id: String(i) })),
+    [{ ...one, extra: true }],
+  ])
+    await assert.rejects(client.save(invalid), {
+      code: "invalid_wardrobe",
+      status: 422,
+    });
+  assert.equal(calls, 0);
+  assert.deepEqual(await client.save([one, { ...one, id: "2" }]), {
+    items: [one, { ...one, id: "2" }],
+  });
+  items = [one, one];
+  await assert.rejects(client.wardrobe(), { code: "staging_wardrobe_invalid" });
   client.close();
 });

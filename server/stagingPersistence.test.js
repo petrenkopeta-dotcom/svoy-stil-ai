@@ -603,3 +603,66 @@ test("profile controller verifies real HTTP save and recovers lost PUT/readback 
     assert.equal(controller.snapshot().confirmed.revision, writes);
   }
 });
+
+test("HTTP wardrobe metadata boundaries reject duplicates/overflow without changing prior data", async (t) => {
+  const f = await fixture(t),
+    cookie = await f.login();
+  const put = (body) => f.request("wardrobe", { cookie, method: "PUT", body });
+  let expected;
+  for (const count of [99, 100]) {
+    expected = Array.from({ length: count }, (_, index) => ({
+      id: String(index + 1),
+      category: "shirt",
+      color: "blue",
+    }));
+    assert.equal((await put(JSON.stringify(expected))).status, 200);
+    assert.deepEqual(await (await f.request("wardrobe", { cookie })).json(), {
+      items: expected,
+    });
+  }
+  for (const invalid of [
+    [...expected, { id: "101", category: "shirt", color: "blue" }],
+    [expected[0], expected[0]],
+    [{ ...expected[0], owner: "other" }],
+  ]) {
+    assert.equal((await put(JSON.stringify(invalid))).status, 422);
+    assert.deepEqual(await (await f.request("wardrobe", { cookie })).json(), {
+      items: expected,
+    });
+  }
+  const unicode = [{ id: "one", category: "Рубашка", color: "Синий" }];
+  const raw = JSON.stringify(unicode),
+    bytes = Buffer.byteLength(raw);
+  assert.equal((await put(raw + " ".repeat(16384 - bytes))).status, 200);
+  assert.equal((await put(raw + " ".repeat(16385 - bytes))).status, 413);
+  const multibyte = JSON.stringify(
+    Array.from({ length: 60 }, (_, i) => ({
+      id: String(i),
+      category: "я".repeat(64),
+      color: "ю".repeat(64),
+    })),
+  );
+  assert.ok(multibyte.length < 16384);
+  assert.ok(Buffer.byteLength(multibyte) > 16384);
+  assert.equal((await put(multibyte)).status, 413);
+  assert.deepEqual(await (await f.request("wardrobe", { cookie })).json(), {
+    items: unicode,
+  });
+  f.edit("metadata.sqlite", (db) =>
+    db
+      .prepare("UPDATE staging_wardrobe SET value=?")
+      .run(JSON.stringify([unicode[0], unicode[0]])),
+  );
+  const corrupt = await f.request("wardrobe", { cookie });
+  assert.equal(corrupt.status, 503);
+  assert.deepEqual(await corrupt.json(), { code: "storage_unavailable" });
+  assert.equal(
+    f.edit(
+      "metadata.sqlite",
+      (db) =>
+        JSON.parse(db.prepare("SELECT value FROM staging_wardrobe").get().value)
+          .length,
+    ),
+    2,
+  );
+});

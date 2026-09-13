@@ -2,23 +2,10 @@ import { randomUUID } from "node:crypto";
 import { verifyVkLaunch } from "./vkAuth.mjs";
 import { createVkProfileStore } from "./vkProfileStore.mjs";
 import { PROFILE_MAX_BYTES } from "../src/vkProfileContract.js";
-
-const validWardrobe = (items) =>
-  Array.isArray(items) &&
-  items.length <= 100 &&
-  items.every(
-    (item) =>
-      item &&
-      typeof item === "object" &&
-      !Array.isArray(item) &&
-      Object.keys(item).every((key) =>
-        ["id", "category", "color"].includes(key),
-      ) &&
-      [item.id, item.category, item.color].every(
-        (value) =>
-          typeof value === "string" && /^[\p{L}\p{N} _-]{1,64}$/u.test(value),
-      ),
-  );
+import {
+  validateVkWardrobe,
+  WARDROBE_MAX_BYTES,
+} from "../src/vkWardrobeMetadataContract.js";
 
 // Storage failures must not masquerade as invalid input or an empty wardrobe.
 const stored = async (operation) => {
@@ -216,7 +203,8 @@ export function createStagingApi({
             .prepare("SELECT value FROM staging_wardrobe WHERE owner=?")
             .get(session.userId);
           const value = row ? JSON.parse(row.value) : [];
-          if (!validWardrobe(value)) throw new Error("invalid_stored_wardrobe");
+          if (!validateVkWardrobe(value))
+            throw new Error("invalid_stored_wardrobe");
           return value;
         });
         return reply(200, { items });
@@ -226,11 +214,11 @@ export function createStagingApi({
         request.method === "PUT"
       ) {
         const raw = await request.text();
-        if (raw.length > 16384)
+        if (new TextEncoder().encode(raw).length > WARDROBE_MAX_BYTES)
           return reply(413, { code: "request_too_large" });
         const items = JSON.parse(raw);
         // A narrow metadata-only schema prevents photo/base64 persistence bypass.
-        if (!validWardrobe(items))
+        if (!validateVkWardrobe(items))
           return reply(422, { code: "invalid_wardrobe" });
         await stored(() =>
           db

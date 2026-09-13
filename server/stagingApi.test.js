@@ -8,6 +8,55 @@ import { createHmac } from "node:crypto";
 import { createSqliteSessionStore } from "./sqliteSessionStore.mjs";
 import { createStagingApi } from "./stagingApi.mjs";
 
+test("direct API independently counts raw wardrobe UTF8 bytes before parsing", async () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const handler = createStagingApi({
+      db,
+      origin: "https://example.test",
+      secret: "synthetic-only-secret",
+      appId: "123",
+      budgetAllowed: () => true,
+      sessions: {
+        durable: true,
+        get: () => ({ userId: "vk:123:456", expiresAt: 9999999999 }),
+      },
+    });
+    const put = (body) =>
+      handler(
+        new Request("https://example.test/api/staging/wardrobe", {
+          method: "PUT",
+          headers: {
+            Origin: "https://example.test",
+            "X-CSRF-Intent": "ai-stylist",
+            Cookie: "stylist_vk=synthetic",
+          },
+          body,
+        }),
+      );
+    assert.equal((await put("[]" + " ".repeat(16382))).status, 200);
+    assert.equal((await put("[]" + " ".repeat(16383))).status, 413);
+    const raw = JSON.stringify(
+      Array.from({ length: 60 }, (_, i) => ({
+        id: String(i),
+        category: "я".repeat(64),
+        color: "ю".repeat(64),
+      })),
+    );
+    assert.ok(raw.length < 16384);
+    assert.ok(Buffer.byteLength(raw) > 16384);
+    assert.equal((await put(raw)).status, 413);
+    assert.equal(
+      db
+        .prepare("SELECT value FROM staging_wardrobe WHERE owner=?")
+        .get("vk:123:456").value,
+      "[]",
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test("VK sessions isolate durable wardrobes, reject photo bypass and obey budget block", async () => {
   const dir = await mkdtemp(path.join(tmpdir(), "stylist-synthetic-vk-"));
   const db = new DatabaseSync(path.join(dir, "metadata.db"));
