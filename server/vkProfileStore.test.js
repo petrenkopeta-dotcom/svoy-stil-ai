@@ -6,6 +6,73 @@ import { createVkProfileStore } from "./vkProfileStore.mjs";
 import { createStagingApi } from "./stagingApi.mjs";
 import { emptyProfileDraft } from "../src/vkProfileContract.js";
 
+test("AUT08 receipt content corruption fails independently of a healthy current profile", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const store = createVkProfileStore({ db, enabled: true });
+    const mutation = { ...emptyProfileDraft(), mutationId: randomUUID() };
+    const healthy = store.write("a", mutation, '"profile-0"');
+    for (const result of [
+      JSON.stringify({
+        ...healthy.profile,
+        city: { name: "Москва", region: "Москва", source: "manual" },
+      }),
+      "invalid-json",
+    ]) {
+      db.prepare(
+        "UPDATE staging_profile_receipts SET result=? WHERE owner=?",
+      ).run(result, "a");
+      const receipt = db
+        .prepare("SELECT * FROM staging_profile_receipts WHERE owner=?")
+        .get("a");
+      assert.deepEqual(store.read("a"), healthy);
+      assert.throws(() => store.write("a", mutation, '"profile-0"'), {
+        code: "storage_unavailable",
+        status: 503,
+      });
+      assert.deepEqual(store.read("a"), healthy);
+      assert.deepEqual(
+        db
+          .prepare("SELECT * FROM staging_profile_receipts WHERE owner=?")
+          .get("a"),
+        receipt,
+      );
+      assert.equal(
+        db.prepare("SELECT count(*) n FROM staging_profile_receipts").get().n,
+        1,
+      );
+    }
+  } finally {
+    db.close();
+  }
+});
+
+test("AUT08 intact old receipt replays original result without reverting newer profile content", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    const store = createVkProfileStore({ db, enabled: true });
+    const original = { ...emptyProfileDraft(), mutationId: randomUUID() };
+    const first = store.write("a", original, '"profile-0"');
+    const second = store.write(
+      "a",
+      {
+        ...emptyProfileDraft(),
+        city: { name: "Мирный", region: "Якутия", source: "manual" },
+        mutationId: randomUUID(),
+      },
+      '"profile-1"',
+    );
+    assert.deepEqual(store.write("a", original, '"profile-0"'), first);
+    assert.deepEqual(store.read("a"), second);
+    assert.equal(
+      db.prepare("SELECT count(*) n FROM staging_profile_receipts").get().n,
+      2,
+    );
+  } finally {
+    db.close();
+  }
+});
+
 test("profile store remains closed without capability and rejects malformed content", () => {
   const db = new DatabaseSync(":memory:");
   try {

@@ -88,6 +88,9 @@ export function createVkProfileStore({
             if (
               !validStoredProfile(profile) ||
               profile.lastMutationId !== mutation.mutationId ||
+              createHash("sha256")
+                .update(canonicalProfile(profile))
+                .digest("hex") !== receipt.hash ||
               !current.profile ||
               current.profile.revision < profile.revision
             )

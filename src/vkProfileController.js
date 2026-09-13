@@ -178,14 +178,19 @@ export function createVkProfileController({
       return run("save", async (request, check) => {
         const fresh = await request();
         if (fresh.etag !== base) throw fail("profile_stale", 412);
+        const expectedRevision = (fresh.profile?.revision || 0) + 1;
         const saved = await request("PUT", { ...wanted, mutationId }, base);
         const readback = await request();
         check();
         if (
           !saved.profile ||
           !readback.profile ||
+          saved.profile.revision !== expectedRevision ||
+          readback.profile.revision !== expectedRevision ||
           readback.etag !== saved.etag ||
+          saved.profile.lastMutationId !== mutationId ||
           readback.profile.lastMutationId !== mutationId ||
+          canonicalProfile(saved.profile) !== canonicalProfile(wanted) ||
           canonicalProfile(readback.profile) !== canonicalProfile(wanted)
         )
           throw fail("profile_readback_mismatch");

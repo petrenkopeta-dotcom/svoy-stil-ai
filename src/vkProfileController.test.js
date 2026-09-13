@@ -15,6 +15,61 @@ const stored = (revision = 1) => ({
   lastMutationId: randomUUID(),
 });
 
+test("AUT08 save requires exactly one revision increment and consistent saved mutation/content", async () => {
+  for (const fault of [
+    "same_revision",
+    "skipped_revision",
+    "saved_mutation",
+    "saved_content",
+  ]) {
+    const initial = stored(1),
+      mutationId = randomUUID();
+    let writes = 0,
+      readback = initial;
+    const client = createVkProfileController({
+      newMutationId: () => mutationId,
+      fetchImpl: async (_, options) => {
+        if (options.method !== "PUT") return reply(readback);
+        writes++;
+        const { mutationId: id, ...content } = JSON.parse(options.body);
+        readback = {
+          ...content,
+          revision:
+            fault === "same_revision"
+              ? 1
+              : fault === "skipped_revision"
+                ? 3
+                : 2,
+          updatedAt: 2,
+          lastMutationId: id,
+        };
+        const saved = { ...readback };
+        if (fault === "saved_mutation") saved.lastMutationId = randomUUID();
+        if (fault === "saved_content")
+          saved.city = { name: "Москва", region: "Москва", source: "manual" };
+        return reply(saved);
+      },
+    });
+    try {
+      await client.load();
+      await assert.rejects(
+        client.save(),
+        { code: "profile_readback_mismatch" },
+        fault,
+      );
+      assert.equal(client.snapshot().state, "unknown", fault);
+      assert.equal(client.snapshot().needsReadback, true, fault);
+      assert.deepEqual(client.snapshot().confirmed, initial, fault);
+      await assert.rejects(client.save(), {
+        code: "profile_readback_required",
+      });
+      assert.equal(writes, 1, fault);
+    } finally {
+      client.close();
+    }
+  }
+});
+
 test("profile draft/cancel and singleflight GET PUT GET confirm without browser storage", async () => {
   let profile = null;
   const calls = [];
