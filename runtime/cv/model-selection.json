@@ -1,0 +1,27 @@
+{
+  "purpose": "research-shortlist-not-a-loadable-manifest",
+  "checked_on": "2026-09-13",
+  "productionApproved": false,
+  "models": {
+    "generator_detector": {
+      "repository": "IDEA-Research/grounding-dino-tiny",
+      "revision": "a2bb814dd30d776dcf7e30523b00659f4f141c71",
+      "model_type": "grounding-dino"
+    },
+    "generator_segmenter": {
+      "repository": "facebook/sam2.1-hiera-tiny",
+      "revision": "de431c4043854a71d8101e17995dfe596bf101a5",
+      "model_type": "sam2_video"
+    },
+    "verifier_presence": {
+      "repository": "google/owlv2-base-patch16-ensemble",
+      "revision": "cfd3195ba4ea9592eec887ded089f4c08eff231d",
+      "model_type": "owlv2"
+    },
+    "verifier_semantic": {
+      "repository": "mattmdjaga/segformer_b2_clothes",
+      "revision": "584abc1e1d260e23c0fc627c5217a09b2b461046",
+      "model_type": "segformer"
+    }
+  }
+}
