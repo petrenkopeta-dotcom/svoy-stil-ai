@@ -93,7 +93,14 @@ test("synthetic photo UI distinguishes empty, timeout, confirmation, read-back, 
 });
 test("denied capability has no upload control", async ({ page }) => {
   await page.route("**/api/staging/**", (route) =>
-    route.fulfill({ json: { photos: false, items: [] } }),
+    route.fulfill({
+      json: {
+        authenticated: true,
+        userId: "vk:123:2",
+        photos: false,
+        items: [],
+      },
+    }),
   );
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveAttribute("data-state", "empty");

@@ -1,4 +1,4 @@
-/** Capture before React/UI evaluation. Only a one-shot module closure retains
+/** Capture during bootstrap, before UI mounting. A one-shot module closure retains
  * launch bytes; identity is not parsed or trusted here. Legacy entry is untouched.
  */
 export function captureVkLaunch({ location, history }) {
