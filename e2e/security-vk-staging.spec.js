@@ -33,7 +33,9 @@ test("security: VK launch and wardrobe do not enter browser persistence or conso
     if (path.endsWith("wardrobe") && request.method() === "PUT")
       items = JSON.parse(request.postData());
     await route.fulfill({
-      json: path.endsWith("wardrobe") ? { items } : { authenticated: true },
+      json: path.endsWith("wardrobe")
+        ? { items }
+        : { authenticated: true, userId: "vk:123:2" },
     });
   });
   await page.goto(`/?vk_app_id=123&sign=${marker}`);
@@ -75,7 +77,7 @@ test("security: failed save and logout never claim server confirmation", async (
         ? {
             json: new URL(request.url()).pathname.endsWith("wardrobe")
               ? { items: [] }
-              : { authenticated: true },
+              : { authenticated: true, userId: "vk:123:2" },
           }
         : { status: 503, json: { code: "staging_budget_blocked" } },
     );
@@ -100,7 +102,9 @@ test("security: client safety flags cannot write original bytes to IndexedDB", a
   page,
 }) => {
   await page.route("**/api/staging/**", (route) =>
-    route.fulfill({ json: { authenticated: true, items: [] } }),
+    route.fulfill({
+      json: { authenticated: true, userId: "vk:123:2", items: [] },
+    }),
   );
   await page.goto("/");
   const result = await page.evaluate(async () => {
@@ -165,7 +169,9 @@ test("security: revoked photo capability blocks transmission of selected origina
       return route.fulfill({ json: { photos: capabilities === 1 } });
     }
     if (path.endsWith("analyze")) analyzes++;
-    return route.fulfill({ json: { authenticated: true, items: [] } });
+    return route.fulfill({
+      json: { authenticated: true, userId: "vk:123:2", items: [] },
+    });
   });
   await page.goto("/");
   await openVkAdd(page);

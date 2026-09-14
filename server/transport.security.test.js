@@ -72,6 +72,7 @@ test("security HTTP: unauthenticated photo refuses body before invoking worker",
   let calls = 0;
   const base = await listener(t, {
     budgetAllowed: () => true,
+    testerAllowed: () => true,
     photoFlow: {
       enabled: () => true,
       analyze() {
@@ -94,7 +95,10 @@ test("security HTTP: unknown photo bypass route refuses body", async (t) => {
 
 test("SEC-01 HTTP: blocked logout revokes cookie and still enforces CSRF", async (t) => {
   let allowed = true;
-  const base = await listener(t, { budgetAllowed: () => allowed });
+  const base = await listener(t, {
+    budgetAllowed: () => allowed,
+    testerAllowed: () => true,
+  });
   const raw = `vk_app_id=123&vk_ts=${Math.floor(Date.now() / 1000)}&vk_user_id=456`;
   const headers = {
     origin: "https://example.test",

@@ -10,6 +10,7 @@ import {
 } from "./vkStagingJourney.js";
 import "./VkStagingApp.css";
 import { VkCityPanel } from "./VkCityPanel.jsx";
+import { takeVkLaunch } from "./vkLaunchEntry.js";
 
 function Action({ children, ...props }) {
   return (
@@ -21,11 +22,7 @@ function Action({ children, ...props }) {
 }
 
 export function VkStagingApp({ cityBridge = null } = {}) {
-  const [client] = useState(() => {
-    const launch = window.location.search.slice(1);
-    window.history.replaceState(null, "", window.location.pathname);
-    return createVkStagingClient({ launch });
-  });
+  const [client] = useState(() => createVkStagingClient(takeVkLaunch()));
   const [items, setItems] = useState([]),
     [photos, setPhotos] = useState([]);
   const [candidates, setCandidates] = useState([]),
@@ -73,7 +70,14 @@ export function VkStagingApp({ cityBridge = null } = {}) {
       if (current !== generation.current) return;
       const result = vkJourneyError(error);
       setState(result.state);
-      if (error.status === 401 || error.code === "vk_launch_rejected") {
+      if (
+        error.status === 401 ||
+        [
+          "vk_launch_rejected",
+          "vk_launch_reopen_required",
+          "vk_launch_redaction_failed",
+        ].includes(error.code)
+      ) {
         setInvalidSession(true);
         setLoaded(false);
         clearPhotos();

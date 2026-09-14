@@ -29,6 +29,10 @@ test("bootstrap owns DOM mounting while the application exports the UI root", ()
 });
 
 test("VK entry does not eagerly load local-prototype styles or persistence", () => {
+  assert.ok(
+    bootstrap.indexOf('import "./vkLaunchEntry.js"') <
+      bootstrap.indexOf("import React"),
+  );
   assert.match(bootstrap, /import\("\.\/LegacyApp\.jsx"\)/);
   assert.match(bootstrap, /import\("\.\/VkStagingApp\.jsx"\)/);
   assert.doesNotMatch(

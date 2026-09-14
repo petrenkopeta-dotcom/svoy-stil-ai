@@ -3,11 +3,14 @@ import { validateVkWardrobe } from "./vkWardrobeMetadataContract.js";
 export function createVkStagingClient({
   fetchImpl = globalThis.fetch,
   launch = "",
+  launchError = null,
   timeoutMs = 20_000,
 } = {}) {
   const pending = new Set();
   let closed = false,
-    launchEpoch = 0;
+    launchEpoch = 0,
+    reopenRequired = launchError,
+    loginPending = null;
   const fail = (code, status) =>
     Object.assign(new Error(code), { code, status });
   const request = async (route, method = "GET", body, binary = false) => {
@@ -27,6 +30,8 @@ export function createVkStagingClient({
         method,
         credentials: "same-origin",
         cache: "no-store",
+        referrerPolicy: "no-referrer",
+        redirect: "error",
         signal: controller.signal,
         headers: {
           "X-CSRF-Intent": "ai-stylist",
@@ -72,26 +77,75 @@ export function createVkStagingClient({
     return value;
   };
   return Object.freeze({
-    async login() {
-      if (!launch) return request("session");
-      const credentials = launch;
-      const currentEpoch = launchEpoch;
-      launch = "";
-      try {
-        return await request("vk-session", "POST", credentials);
-      } catch (error) {
-        // Only a definite pre-login budget denial permits retrying this launch.
-        // Its original timestamp is untouched; the server still enforces freshness.
-        if (
-          !closed &&
-          currentEpoch === launchEpoch &&
-          error.status === 503 &&
-          error.code === "staging_budget_blocked"
-        )
-          launch = credentials;
-        if (error.status === 400) throw fail("vk_launch_rejected", 400);
-        throw error;
-      }
+    login() {
+      if (closed) return Promise.reject(fail("client_closed"));
+      if (loginPending) return loginPending;
+      const login = async () => {
+        if (reopenRequired) throw fail(reopenRequired);
+        if (!launch) {
+          try {
+            const session = await request("session");
+            if (
+              session?.authenticated !== true ||
+              typeof session.userId !== "string" ||
+              !/^vk:[1-9]\d*:[1-9]\d*$/.test(session.userId)
+            )
+              throw fail("vk_session_missing", 401);
+            return session;
+          } catch (error) {
+            if (error.status === 401) throw fail("vk_session_missing", 401);
+            throw error;
+          }
+        }
+        const credentials = launch;
+        const currentEpoch = launchEpoch;
+        launch = "";
+        reopenRequired = "vk_launch_reopen_required";
+        if (new TextEncoder().encode(credentials).length > 8192)
+          throw fail("vk_launch_rejected", 400);
+        let exchanged = false;
+        try {
+          const result = await request("vk-session", "POST", credentials);
+          exchanged = true;
+          if (currentEpoch !== launchEpoch) throw fail("request_cancelled");
+          if (
+            typeof result?.userId !== "string" ||
+            !/^vk:[1-9]\d*:[1-9]\d*$/.test(result.userId)
+          )
+            throw fail("vk_launch_reopen_required");
+          const session = await request("session");
+          if (currentEpoch !== launchEpoch) throw fail("request_cancelled");
+          if (
+            session?.authenticated !== true ||
+            session.userId !== result.userId
+          )
+            throw fail("vk_launch_reopen_required");
+          reopenRequired = null;
+          return result;
+        } catch (error) {
+          // Only a definite pre-login budget denial permits retrying this launch.
+          // Its original timestamp is untouched; the server still enforces freshness.
+          if (
+            !closed &&
+            !exchanged &&
+            currentEpoch === launchEpoch &&
+            error.status === 503 &&
+            error.code === "staging_budget_blocked"
+          ) {
+            launch = credentials;
+            reopenRequired = null;
+          }
+          if (error.status === 400) throw fail("vk_launch_rejected", 400);
+          if (reopenRequired && currentEpoch === launchEpoch)
+            throw fail("vk_launch_reopen_required");
+          throw error;
+        }
+      };
+      const promise = login().finally(() => {
+        if (loginPending === promise) loginPending = null;
+      });
+      loginPending = promise;
+      return promise;
     },
     wardrobe: readWardrobe,
     capabilities: () => request("capabilities"),
@@ -132,6 +186,7 @@ export function createVkStagingClient({
     async logout() {
       launchEpoch++;
       launch = "";
+      reopenRequired = "vk_launch_reopen_required";
       for (const controller of pending) controller.abort();
       return request("logout", "POST", "");
     },
@@ -145,6 +200,22 @@ export function createVkStagingClient({
 }
 
 export function vkJourneyError(error) {
+  if (
+    ["vk_launch_reopen_required", "vk_launch_redaction_failed"].includes(
+      error.code,
+    )
+  )
+    return {
+      state: "error",
+      message:
+        "Вход не подтверждён. Закройте приложение и откройте его заново из VK. Данные другой сессии не загружаются.",
+    };
+  if (error.code === "vk_session_missing")
+    return {
+      state: "error",
+      message:
+        "Откройте приложение из VK. По прямой ссылке без действующей сессии личный гардероб недоступен.",
+    };
   if (error.code === "storage_unavailable")
     return {
       state: "unavailable",

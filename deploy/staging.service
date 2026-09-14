@@ -6,9 +6,9 @@ After=network.target
 Type=simple
 User=stylist
 Group=stylist
-WorkingDirectory=/opt/stylist
+WorkingDirectory=/opt/stylist/current
 EnvironmentFile=/etc/stylist/staging.env
-ExecStart=/usr/bin/node /opt/stylist/scripts/server-start.mjs
+ExecStart=/usr/bin/node /opt/stylist/current/scripts/server-start.mjs
 Restart=no
 UMask=0077
 NoNewPrivileges=true
@@ -32,7 +32,9 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 IPAddressDeny=any
 IPAddressAllow=localhost
 KillMode=control-group
-TimeoutStopSec=5s
+TimeoutStopSec=25s
+StateDirectory=stylist
+StateDirectoryMode=0700
 ReadWritePaths=/var/lib/stylist
 LimitCORE=0
 MemorySwapMax=0
@@ -45,5 +47,4 @@ Environment=TRANSFORMERS_OFFLINE=1
 StandardOutput=null
 StandardError=null
 
-[Install]
-WantedBy=multi-user.target
+# Intentionally no Install/WantedBy: do not enable automatic boot startup.

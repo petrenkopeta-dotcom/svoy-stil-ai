@@ -17,6 +17,7 @@ test("direct API independently counts raw wardrobe UTF8 bytes before parsing", a
       secret: "synthetic-only-secret",
       appId: "123",
       budgetAllowed: () => true,
+      testerAllowed: () => true,
       sessions: {
         durable: true,
         get: () => ({ userId: "vk:123:456", expiresAt: 9999999999 }),
@@ -75,6 +76,7 @@ test("VK sessions isolate durable wardrobes, reject photo bypass and obey budget
     appId: "123",
     now: () => 1800000000000,
     budgetAllowed: () => allowed,
+    testerAllowed: () => true,
   });
   const request = (route, method = "GET", body, cookie) =>
     handler(
@@ -210,6 +212,7 @@ test("synthetic VK photo journey: login, analyze, confirm, list/read, owner isol
     appId: "123",
     now: () => 1800000000000,
     budgetAllowed: () => true,
+    testerAllowed: () => true,
     photoFlow: flow,
   });
   const makeClient = (user) => {

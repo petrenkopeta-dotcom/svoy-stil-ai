@@ -46,6 +46,7 @@ test("HTTP VK login, authenticated write and read-back work with injected test a
       PORT: "0",
     },
     budgetAllowed: () => true,
+    testerAllowed: () => true,
   });
   try {
     await once(server, "listening");
@@ -108,6 +109,7 @@ test("budget denial still permits only authenticated CSRF-checked bounded logout
       PORT: "0",
     },
     budgetAllowed: () => allowed,
+    testerAllowed: () => true,
     photoFlow: {
       cancel: (owner) => cancelled.push(owner),
       close() {},
@@ -232,6 +234,7 @@ test("HTTP photo routes enforce owner, method, release and budget boundaries", a
       PORT: "0",
     },
     budgetAllowed: () => allowed,
+    testerAllowed: () => true,
     photoFlow: flow,
   });
   const clients = [];

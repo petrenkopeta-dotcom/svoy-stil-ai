@@ -247,6 +247,7 @@ test("API rechecks profile capability and budget on every request without defaul
       secret: "synthetic-only-secret",
       profileAllowed: () => enabled,
       budgetAllowed: () => budget,
+      testerAllowed: () => true,
     });
     const request = (method = "GET", raw) =>
       api(

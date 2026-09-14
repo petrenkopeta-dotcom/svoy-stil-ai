@@ -25,10 +25,18 @@ export function createStagingApi({
   appId,
   now = Date.now,
   budgetAllowed = () => false,
+  testerAllowed = () => false,
   photoFlow,
   profileAllowed = () => false,
 }) {
   let profileStore;
+  const testerAdmitted = async (owner) => {
+    try {
+      return (await testerAllowed(owner)) === true;
+    } catch {
+      return false;
+    }
+  };
   if (sessions?.durable !== true || !origin?.startsWith("https://"))
     throw new Error("staging_configuration_required");
   db.exec(
@@ -67,6 +75,8 @@ export function createStagingApi({
       ) {
         const launch = await request.text();
         const identity = verifyVkLaunch(launch, { secret, appId, now: now() });
+        if (!(await testerAdmitted(identity.userId)))
+          return reply(403, { code: "tester_not_allowed" });
         const id = randomUUID();
         await stored(() =>
           sessions.put(id, {
@@ -99,8 +109,11 @@ export function createStagingApi({
         throw new Error("storage_unavailable");
       if (!session || session.expiresAt * 1000 <= now())
         return reply(401, { code: "session_required" });
+      // Recheck membership on every request; removed testers may still revoke.
+      if (!logout && !(await testerAdmitted(session.userId)))
+        return reply(403, { code: "tester_not_allowed" });
       if (url.pathname === "/api/staging/session" && request.method === "GET")
-        return reply(200, { authenticated: true });
+        return reply(200, { authenticated: true, userId: session.userId });
       if (url.pathname === "/api/staging/profile") {
         if (profileAllowed() !== true)
           return reply(503, { code: "profile_release_unapproved" });

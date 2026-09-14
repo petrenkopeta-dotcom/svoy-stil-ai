@@ -230,7 +230,12 @@ async function server(page, { initial = [], failRead = false } = {}) {
         : route.fulfill({ json: { items } });
     }
     return route.fulfill({
-      json: { authenticated: true, photos: false, signedOut: true },
+      json: {
+        authenticated: true,
+        userId: "vk:123:2",
+        photos: false,
+        signedOut: true,
+      },
     });
   });
   return {
@@ -502,7 +507,12 @@ test("cancel photo waiting ignores a late result and preserves a recoverable ses
       return;
     }
     return route.fulfill({
-      json: { authenticated: true, photos: true, items: [] },
+      json: {
+        authenticated: true,
+        userId: "vk:123:2",
+        photos: true,
+        items: [],
+      },
     });
   });
   try {
