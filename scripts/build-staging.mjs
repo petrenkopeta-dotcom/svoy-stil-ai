@@ -19,8 +19,20 @@ const untracked = spawnSync(
   ["ls-files", "--others", "-z", "--", "public", "src", "server"],
   { cwd: root, encoding: "utf8", windowsHide: true },
 );
-// Prevent accidental VITE_* secrets/settings from entering the staging bundle.
-if (
+// Vite loads dotenv independently of process.env. Inspect names only, never
+// contents, and refuse all dotenv sources before invoking the bundler. The
+// tracked .env.example template is not a Vite input. Case folding also covers
+// case-insensitive host filesystems.
+const dotenvPresent = readdirSync(root).some((entry) => {
+  const name = entry.toLowerCase();
+  return (
+    name === ".env" || (name.startsWith(".env.") && name !== ".env.example")
+  );
+});
+if (dotenvPresent) {
+  process.stderr.write("staging_build_dotenv_rejected\n");
+  process.exitCode = 1;
+} else if (
   Object.keys(process.env).some(
     (key) => key.startsWith("VITE_") && key !== "VITE_VK_STAGING",
   )
