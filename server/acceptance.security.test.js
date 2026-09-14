@@ -180,13 +180,14 @@ function apiFixture(t) {
   const db = new DatabaseSync(":memory:");
   t.after(() => db.close());
   const records = new Map([
-    ["a", { userId: "owner-a", expiresAt: 2000 }],
-    ["b", { userId: "owner-b", expiresAt: 2000 }],
+    ["a", { userId: "vk:123:1", expiresAt: 2000 }],
+    ["b", { userId: "vk:123:2", expiresAt: 2000 }],
   ]);
   let allowed = true,
     calls = 0;
   const handler = createStagingApi({
     db,
+    appId: "123",
     sessions: {
       durable: true,
       get: async (id) => records.get(id),

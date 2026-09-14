@@ -175,12 +175,31 @@ function Demo() {
           aria-label={`Посмотреть: ${item.name}`}
         >
           <Garment item={item} />
-          <span className="item-name">{item.name}</span>
+          <span className="item-name">
+            {item.trial ? item.category : item.name}
+          </span>
           <span className="muted">
-            {item.category} · {item.color}
+            {item.trial
+              ? `Цвет: ${item.color}`
+              : `${item.category} · ${item.color}`}
           </span>
           <span className="card-link">
-            Посмотреть вещь <span aria-hidden="true">↗</span>
+            <span>Посмотреть вещь</span>
+            <svg
+              className="card-arrow"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+              focusable="false"
+            >
+              <path
+                d="M4 12 12 4M4 4h8v8"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </span>
         </button>
       ))}
@@ -200,11 +219,15 @@ function Demo() {
         К содержанию
       </a>
       <div className="demo-label">Демо · без личных вещей и фотографий</div>
-      <header>
+      <header
+        className={
+          ["entry", "item"].includes(screen) ? "compact-header" : undefined
+        }
+      >
         <div className="brand">Надеть есть что</div>
         <p className="brand-note">меньше поисков — больше своего</p>
       </header>
-      <main id="content">
+      <main id="content" data-screen={screen}>
         {screen === "entry" && (
           <>
             {title("Начнём", "с вашего стиля", "Знакомство с приложением")}
@@ -484,9 +507,11 @@ function Demo() {
             )}
             <div className="panel centered">
               <Garment item={selected} large />
-              <h2>{selected.name}</h2>
+              <h2>{selected.trial ? selected.category : selected.name}</h2>
               <p className="muted">
-                {selected.category} · {selected.color}
+                {selected.trial
+                  ? `Цвет: ${selected.color}`
+                  : `${selected.category} · ${selected.color}`}
               </p>
               <p className="hint">
                 Условная иллюстрация, не фото вещи. Посадка и сезонность не

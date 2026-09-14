@@ -9,6 +9,7 @@ export function startStagingServer({
   env = process.env,
   budgetAllowed = () => false,
   photoFlow,
+  profileAllowed = () => false,
 } = {}) {
   if (
     !env.STAGING_DATA_DIR ||
@@ -20,19 +21,27 @@ export function startStagingServer({
   const db = new DatabaseSync(
     path.join(env.STAGING_DATA_DIR, "metadata.sqlite"),
   );
-  const sessions = createSqliteSessionStore({
-    filename: path.join(env.STAGING_DATA_DIR, "sessions.sqlite"),
-  });
-  // No opt-in environment bypass: provider billing enforcement is not connected.
-  const handler = createStagingApi({
-    db,
-    sessions,
-    origin: env.STAGING_ORIGIN,
-    secret: env.VK_APP_SECRET,
-    appId: env.VK_APP_ID,
-    budgetAllowed,
-    photoFlow,
-  });
+  let sessions, handler;
+  try {
+    sessions = createSqliteSessionStore({
+      filename: path.join(env.STAGING_DATA_DIR, "sessions.sqlite"),
+    });
+    // No opt-in environment bypass: provider billing enforcement is not connected.
+    handler = createStagingApi({
+      db,
+      sessions,
+      origin: env.STAGING_ORIGIN,
+      secret: env.VK_APP_SECRET,
+      appId: env.VK_APP_ID,
+      budgetAllowed,
+      photoFlow,
+      profileAllowed,
+    });
+  } catch {
+    sessions?.close();
+    db.close();
+    throw new Error("staging_storage_unavailable");
+  }
   let inFlight = 0;
   const server = createServer(async (request, response) => {
     if (inFlight >= 2) {
@@ -65,6 +74,16 @@ export function startStagingServer({
           .end(JSON.stringify({ code: "staging_budget_blocked" }));
         return;
       }
+      if (request.url === "/api/staging/profile" && profileAllowed() !== true) {
+        response
+          .writeHead(503, {
+            "Content-Type": "application/json",
+            "Cache-Control": "no-store",
+            Connection: "close",
+          })
+          .end(JSON.stringify({ code: "profile_release_unapproved" }));
+        return;
+      }
       const photoRequest =
         (request.method === "GET" && request.url === "/api/staging/photos") ||
         /^\/api\/staging\/photos\/(analyze|confirm|[a-f0-9-]{36})$/.test(
@@ -90,7 +109,7 @@ export function startStagingServer({
       if (
         !photoRequest &&
         !capabilityRequest &&
-        !/^\/api\/staging\/(vk-session|session|wardrobe|logout)$/.test(
+        !/^\/api\/staging\/(vk-session|session|wardrobe|logout|profile)$/.test(
           request.url || "",
         )
       ) {

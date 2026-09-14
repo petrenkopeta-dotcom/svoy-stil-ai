@@ -1,4 +1,5 @@
 /** Same-origin VK client. Credentials and image bytes stay in memory. */
+import { validateVkWardrobe } from "./vkWardrobeMetadataContract.js";
 export function createVkStagingClient({
   fetchImpl = globalThis.fetch,
   launch = "",
@@ -64,6 +65,12 @@ export function createVkStagingClient({
     if (digest !== sha256) throw fail("photo_readback_mismatch");
     return { id, sha256, blob: new Blob([bytes], { type: "image/png" }) };
   };
+  const readWardrobe = async () => {
+    const value = await request("wardrobe");
+    if (!validateVkWardrobe(value?.items))
+      throw fail("staging_wardrobe_invalid");
+    return value;
+  };
   return Object.freeze({
     async login() {
       if (!launch) return request("session");
@@ -86,7 +93,7 @@ export function createVkStagingClient({
         throw error;
       }
     },
-    wardrobe: () => request("wardrobe"),
+    wardrobe: readWardrobe,
     capabilities: () => request("capabilities"),
     photos: () => request("photos"),
     async analyze(file) {
@@ -115,8 +122,9 @@ export function createVkStagingClient({
       for (const controller of pending) controller.abort();
     },
     async save(items) {
+      if (!validateVkWardrobe(items)) throw fail("invalid_wardrobe", 422);
       await request("wardrobe", "PUT", JSON.stringify(items));
-      const readBack = await request("wardrobe");
+      const readBack = await readWardrobe();
       if (JSON.stringify(readBack.items) !== JSON.stringify(items))
         throw fail("staging_readback_mismatch");
       return readBack;
@@ -137,6 +145,12 @@ export function createVkStagingClient({
 }
 
 export function vkJourneyError(error) {
+  if (error.code === "storage_unavailable")
+    return {
+      state: "unavailable",
+      message:
+        "Хранилище гардероба временно недоступно. Результат не подтверждён; обновите гардероб перед повтором.",
+    };
   if (error.status === 401 || error.code === "vk_launch_rejected")
     return {
       state: "error",

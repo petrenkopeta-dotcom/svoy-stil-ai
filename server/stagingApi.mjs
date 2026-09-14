@@ -1,5 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { verifyVkLaunch } from "./vkAuth.mjs";
+import { createVkProfileStore } from "./vkProfileStore.mjs";
+import { PROFILE_MAX_BYTES } from "../src/vkProfileContract.js";
+import {
+  validateVkWardrobe,
+  WARDROBE_MAX_BYTES,
+} from "../src/vkWardrobeMetadataContract.js";
+
+// Storage failures must not masquerade as invalid input or an empty wardrobe.
+const stored = async (operation) => {
+  try {
+    return await operation();
+  } catch {
+    throw new Error("storage_unavailable");
+  }
+};
 
 /** Separate Russian backend contract. No Supabase or external photo forwarding. */
 export function createStagingApi({
@@ -11,7 +26,9 @@ export function createStagingApi({
   now = Date.now,
   budgetAllowed = () => false,
   photoFlow,
+  profileAllowed = () => false,
 }) {
+  let profileStore;
   if (sessions?.durable !== true || !origin?.startsWith("https://"))
     throw new Error("staging_configuration_required");
   db.exec(
@@ -51,10 +68,12 @@ export function createStagingApi({
         const launch = await request.text();
         const identity = verifyVkLaunch(launch, { secret, appId, now: now() });
         const id = randomUUID();
-        await sessions.put(id, {
-          ...identity,
-          expiresAt: Math.floor(now() / 1000) + 3600,
-        });
+        await stored(() =>
+          sessions.put(id, {
+            ...identity,
+            expiresAt: Math.floor(now() / 1000) + 3600,
+          }),
+        );
         return reply(
           200,
           { userId: identity.userId },
@@ -69,21 +88,56 @@ export function createStagingApi({
         .map((x) => x.trim())
         .find((x) => x.startsWith("stylist_vk="))
         ?.slice(11);
-      const session = id && (await sessions.get(id));
+      const session = id && (await stored(() => sessions.get(id)));
+      if (
+        session &&
+        (!Number.isSafeInteger(session.expiresAt) ||
+          typeof session.userId !== "string" ||
+          !session.userId.startsWith(`vk:${appId}:`) ||
+          !/^[1-9]\d*$/.test(session.userId.slice(`vk:${appId}:`.length)))
+      )
+        throw new Error("storage_unavailable");
       if (!session || session.expiresAt * 1000 <= now())
         return reply(401, { code: "session_required" });
       if (url.pathname === "/api/staging/session" && request.method === "GET")
         return reply(200, { authenticated: true });
+      if (url.pathname === "/api/staging/profile") {
+        if (profileAllowed() !== true)
+          return reply(503, { code: "profile_release_unapproved" });
+        if (!["GET", "PUT"].includes(request.method))
+          return reply(404, { code: "route_unavailable" });
+        // Lazy creation only after authenticated explicit admission; never on normal startup.
+        profileStore ??= await stored(() =>
+          createVkProfileStore({ db, enabled: true, now }),
+        );
+        let result;
+        if (request.method === "GET")
+          result = profileStore.read(session.userId);
+        else {
+          const raw = await request.text();
+          if (new TextEncoder().encode(raw).length > PROFILE_MAX_BYTES)
+            return reply(413, { code: "request_too_large" });
+          result = profileStore.write(
+            session.userId,
+            JSON.parse(raw),
+            request.headers.get("if-match"),
+          );
+        }
+        return reply(200, { profile: result.profile }, { ETag: result.etag });
+      }
       if (
         url.pathname === "/api/staging/capabilities" &&
         request.method === "GET"
       )
-        return reply(200, { photos: photoFlow?.enabled() === true });
+        return reply(200, {
+          photos: photoFlow?.enabled() === true,
+          ...(profileAllowed() === true ? { profiles: true } : {}),
+        });
       if (url.pathname === "/api/staging/logout" && request.method === "POST") {
         if ((await request.arrayBuffer()).byteLength > 16384)
           return reply(413, { code: "request_too_large" });
         photoFlow?.cancel(session.userId);
-        await sessions.delete(id);
+        await stored(() => sessions.delete(id));
         return reply(
           200,
           { signedOut: true },
@@ -144,42 +198,32 @@ export function createStagingApi({
         url.pathname === "/api/staging/wardrobe" &&
         request.method === "GET"
       ) {
-        const row = db
-          .prepare("SELECT value FROM staging_wardrobe WHERE owner=?")
-          .get(session.userId);
-        return reply(200, { items: row ? JSON.parse(row.value) : [] });
+        const items = await stored(() => {
+          const row = db
+            .prepare("SELECT value FROM staging_wardrobe WHERE owner=?")
+            .get(session.userId);
+          const value = row ? JSON.parse(row.value) : [];
+          if (!validateVkWardrobe(value))
+            throw new Error("invalid_stored_wardrobe");
+          return value;
+        });
+        return reply(200, { items });
       }
       if (
         url.pathname === "/api/staging/wardrobe" &&
         request.method === "PUT"
       ) {
         const raw = await request.text();
-        if (raw.length > 16384)
+        if (new TextEncoder().encode(raw).length > WARDROBE_MAX_BYTES)
           return reply(413, { code: "request_too_large" });
         const items = JSON.parse(raw);
         // A narrow metadata-only schema prevents photo/base64 persistence bypass.
-        if (
-          !Array.isArray(items) ||
-          items.length > 100 ||
-          items.some(
-            (item) =>
-              !item ||
-              typeof item !== "object" ||
-              Array.isArray(item) ||
-              Object.keys(item).some(
-                (key) => !["id", "category", "color"].includes(key),
-              ) ||
-              ![item.id, item.category, item.color].every(
-                (value) =>
-                  typeof value === "string" &&
-                  /^[\p{L}\p{N} _-]{1,64}$/u.test(value),
-              ),
-          )
-        )
+        if (!validateVkWardrobe(items))
           return reply(422, { code: "invalid_wardrobe" });
-        db.prepare("INSERT OR REPLACE INTO staging_wardrobe VALUES (?,?)").run(
-          session.userId,
-          JSON.stringify(items),
+        await stored(() =>
+          db
+            .prepare("INSERT OR REPLACE INTO staging_wardrobe VALUES (?,?)")
+            .run(session.userId, JSON.stringify(items)),
         );
         return reply(200, { saved: true });
       }
@@ -187,6 +231,13 @@ export function createStagingApi({
     } catch (error) {
       // Only allowlisted protocol errors leave the server; never worker diagnostics.
       const status = {
+        profile_release_unapproved: 503,
+        profile_precondition_required: 428,
+        profile_stale: 412,
+        profile_mutation_conflict: 409,
+        profile_receipts_full: 429,
+        invalid_profile: 422,
+        storage_unavailable: 503,
         photo_release_unapproved: 503,
         photo_busy: 409,
         candidate_not_found: 404,

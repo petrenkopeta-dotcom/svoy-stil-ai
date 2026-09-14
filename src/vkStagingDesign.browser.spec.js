@@ -3,6 +3,212 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { openVkAdd, chooseVkMetadata } from "../e2e/vkJourney.helpers.js";
 
+async function cityFixture(page, behavior = "success") {
+  const external = [],
+    writes = [];
+  page.on("request", (request) => {
+    if (!new URL(request.url()).host.startsWith("127.0.0.1:"))
+      external.push(request.url());
+    if (["PUT", "PATCH", "DELETE"].includes(request.method()))
+      writes.push(request.url());
+  });
+  await server(page, {
+    initial: [{ id: "1", category: "shirt", color: "blue" }],
+  });
+  await page.route("**/city-fixture", (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `
+    <meta charset="utf-8"><div id="root"></div><script type="module">
+      import React from '/node_modules/.vite/deps/react.js';
+      import ReactDOM from '/node_modules/.vite/deps/react-dom_client.js';
+      import RefreshRuntime from '/@react-refresh';
+      RefreshRuntime.injectIntoGlobalHook(window);
+      window.$RefreshReg$ = () => {};
+      window.$RefreshSig$ = () => (type) => type;
+      window.__vite_plugin_react_preamble_installed__ = true;
+      const { VkStagingApp } = await import('/src/VkStagingApp.jsx');
+      window.cityCalls = [];
+      const bridge = {
+        supportsAsync: async (method) => { window.cityCalls.push(method); return ${JSON.stringify(behavior)} !== 'unsupported'; },
+        send: async (method) => {
+          window.cityCalls.push(method);
+          if (${JSON.stringify(behavior)} === 'reject') throw new Error('synthetic-private');
+          if (${JSON.stringify(behavior)} === 'absent') return {};
+          if (${JSON.stringify(behavior)} === 'late') return new Promise(resolve => { window.finishCity = () => resolve({city:{title:'Москва'}}); });
+          return { id:456, first_name:'Synthetic', city:{id:1,title:'Москва'} };
+        }
+      };
+      ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(VkStagingApp, {cityBridge:bridge}));
+    </script>`,
+    }),
+  );
+  await page.goto("/city-fixture");
+  await expect(
+    page.getByRole("region", { name: "Город и погода" }),
+  ).toBeVisible();
+  return { external, writes };
+}
+
+test("city manual form is optional, validated, memory-only and keeps wardrobe available", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  const observed = await cityFixture(page);
+  const panel = page.getByRole("region", { name: "Город и погода" });
+  await panel.getByRole("button", { name: "Указать город вручную" }).click();
+  await expect(panel.getByLabel("Город", { exact: true })).toBeFocused();
+  await panel.getByLabel("Город", { exact: true }).fill("https://evil.test");
+  await panel
+    .getByRole("button", { name: "Выбрать город", exact: true })
+    .click();
+  await expect(panel.getByText(/Укажите город и регион:/)).toBeVisible();
+  await panel.getByLabel("Город", { exact: true }).fill("Астрахань");
+  await panel.getByLabel("Регион или страна").fill("Астраханская область");
+  await panel
+    .getByRole("button", { name: "Выбрать город", exact: true })
+    .click();
+  await expect(
+    panel.getByText("Астрахань, Астраханская область", { exact: true }),
+  ).toBeVisible();
+  await expect(panel.getByText("Прогноз ещё не подключён")).toBeVisible();
+  await expect(
+    page.getByRole("list", { name: "Личный гардероб" }),
+  ).toBeVisible();
+  expect(await page.evaluate(() => window.cityCalls)).toEqual([]);
+  expect(
+    await page.evaluate(() => ({
+      local: Object.keys(localStorage),
+      session: Object.keys(sessionStorage),
+    })),
+  ).toEqual({ local: [], session: [] });
+  expect(observed.external).toEqual([]);
+  expect(observed.writes).toEqual([]);
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await mkdir(path.resolve("artifacts/vk-city"), { recursive: true });
+  await panel.screenshot({
+    path: path.resolve("artifacts/vk-city/manual-320.png"),
+  });
+  await page.reload();
+  await expect(
+    panel.getByText("Город не выбран", { exact: true }),
+  ).toBeVisible();
+});
+
+test("profile city needs explicit region/confirmation and manual remains available", async ({
+  page,
+}) => {
+  await cityFixture(page);
+  const panel = page.getByRole("region", { name: "Город и погода" });
+  await panel.getByRole("button", { name: "Предложить город из VK" }).click();
+  await expect(
+    panel.getByText("Город не выбран", { exact: true }),
+  ).toBeVisible();
+  await panel.getByLabel("Регион или страна").fill("Москва");
+  await panel.getByRole("button", { name: "Подтвердить город VK" }).click();
+  await expect(panel.getByText("Город VK подтверждён вами")).toBeVisible();
+  await panel.getByRole("button", { name: "Указать город вручную" }).click();
+  await panel.getByLabel("Город", { exact: true }).fill("Мирный");
+  await panel.getByLabel("Регион или страна").fill("Якутия");
+  await panel
+    .getByRole("button", { name: "Выбрать город", exact: true })
+    .click();
+  await expect(
+    panel.getByText("Мирный, Якутия", { exact: true }),
+  ).toBeVisible();
+});
+
+for (const behavior of ["unsupported", "reject", "absent", "late"])
+  test(`city ${behavior} falls back without blocking wardrobe`, async ({
+    page,
+  }) => {
+    await cityFixture(page, behavior);
+    const panel = page.getByRole("region", { name: "Город и погода" });
+    await panel.getByRole("button", { name: "Предложить город из VK" }).click();
+    await expect(panel.getByText(/Укажите город вручную\./)).toBeVisible({
+      timeout: 7000,
+    });
+    await expect(
+      panel.getByRole("button", { name: "Указать город вручную" }),
+    ).toBeEnabled();
+    await expect(
+      page.getByRole("list", { name: "Личный гардероб" }),
+    ).toBeVisible();
+  });
+
+test("late profile result cannot overwrite manual city or restore city after logout", async ({
+  page,
+}) => {
+  await cityFixture(page, "late");
+  const panel = page.getByRole("region", { name: "Город и погода" });
+  await panel.getByRole("button", { name: "Предложить город из VK" }).click();
+  await expect
+    .poll(() => page.evaluate(() => typeof window.finishCity))
+    .toBe("function");
+  await panel.getByRole("button", { name: "Указать город вручную" }).click();
+  await panel.getByLabel("Город", { exact: true }).fill("Мирный");
+  await panel.getByLabel("Регион или страна").fill("Якутия");
+  await panel
+    .getByRole("button", { name: "Выбрать город", exact: true })
+    .click();
+  await page.evaluate(() => window.finishCity());
+  await expect(
+    panel.getByText("Мирный, Якутия", { exact: true }),
+  ).toBeVisible();
+  await panel.getByRole("button", { name: "Убрать город" }).click();
+  await page.evaluate(() => {
+    window.finishCity = null;
+  });
+  await panel.getByRole("button", { name: "Предложить город из VK" }).click();
+  await expect
+    .poll(() => page.evaluate(() => typeof window.finishCity))
+    .toBe("function");
+  await page.getByRole("button", { name: "Выйти", exact: true }).click();
+  await page.evaluate(() => window.finishCity());
+  await expect(panel).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("Вы вышли");
+});
+
+test("storage unavailable copy reaches load and save UI and recovery remains required", async ({
+  page,
+}) => {
+  const backend = await server(page, {
+    initial: [{ id: "1", category: "shirt", color: "blue" }],
+  });
+  let failLoad = true;
+  await page.route("**/api/staging/wardrobe", (route) =>
+    failLoad || route.request().method() === "PUT"
+      ? route.fulfill({ status: 503, json: { code: "storage_unavailable" } })
+      : route.fallback(),
+  );
+  await page.goto("/");
+  await expect(page.getByRole("status")).toContainText(
+    "Хранилище гардероба временно недоступно",
+  );
+  failLoad = false;
+  await page
+    .getByRole("button", { name: "Обновить гардероб", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Добавить вещь", exact: true })
+    .click();
+  await chooseVkMetadata(page);
+  await page
+    .getByRole("button", { name: "Сохранить без фото", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    "Хранилище гардероба временно недоступно",
+  );
+  await expect(
+    page.getByRole("button", { name: "Сохранить без фото", exact: true }),
+  ).toBeDisabled();
+  expect(backend.writes).toBe(0);
+});
+
 async function server(page, { initial = [], failRead = false } = {}) {
   let items = initial,
     writes = 0,
