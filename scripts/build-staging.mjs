@@ -10,6 +10,15 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 const root = fileURLToPath(new URL("../", import.meta.url));
+const clean = spawnSync("git", ["diff", "--quiet", "HEAD", "--"], {
+  cwd: root,
+  windowsHide: true,
+});
+const untracked = spawnSync(
+  "git",
+  ["ls-files", "--others", "-z", "--", "public", "src", "server"],
+  { cwd: root, encoding: "utf8", windowsHide: true },
+);
 // Prevent accidental VITE_* secrets/settings from entering the staging bundle.
 if (
   Object.keys(process.env).some(
@@ -17,6 +26,13 @@ if (
   )
 ) {
   process.stderr.write("staging_build_environment_rejected\n");
+  process.exitCode = 1;
+} else if (
+  clean.status !== 0 ||
+  untracked.status !== 0 ||
+  untracked.stdout.length !== 0
+) {
+  process.stderr.write("staging_build_clean_source_required\n");
   process.exitCode = 1;
 } else {
   const result = spawnSync(
@@ -51,9 +67,11 @@ if (
       },
     );
     const files = [
-      ...readdirSync(path.join(root, "server"))
-        .filter((name) => name.endsWith(".mjs"))
-        .map((name) => `server/${name}`),
+      "server/stagingServer.mjs",
+      "server/stagingApi.mjs",
+      "server/sqliteSessionStore.mjs",
+      "server/vkAuth.mjs",
+      "server/vkProfileStore.mjs",
       "src/vkProfileContract.js",
       "src/vkWardrobeMetadataContract.js",
       "src/vkStagingJourney.js",

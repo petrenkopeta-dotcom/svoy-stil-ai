@@ -19,7 +19,7 @@ COPY --from=verify /app/dist /dist
 FROM node:24.17.0-bookworm-slim AS runtime
 WORKDIR /opt/stylist
 COPY --from=verify --chown=node:node /app/package.json ./package.json
-COPY --from=verify --chown=node:node /app/server ./server
+COPY --from=verify --chown=node:node /app/server/stagingServer.mjs /app/server/stagingApi.mjs /app/server/sqliteSessionStore.mjs /app/server/vkAuth.mjs /app/server/vkProfileStore.mjs ./server/
 COPY --from=verify --chown=node:node /app/src/vkProfileContract.js /app/src/vkWardrobeMetadataContract.js ./src/
 COPY --from=verify --chown=node:node /app/src/vkStagingJourney.js /app/src/vkStagingCity.js ./src/
 COPY --from=verify --chown=node:node /app/scripts/server-start.mjs ./scripts/server-start.mjs

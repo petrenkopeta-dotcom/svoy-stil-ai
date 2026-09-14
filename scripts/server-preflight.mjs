@@ -17,7 +17,7 @@ export function configurationChecks(env) {
     origin,
     appId: /^[1-9]\d*$/.test(env.VK_APP_ID || ""),
     secretPresent:
-      typeof env.VK_APP_SECRET === "string" && env.VK_APP_SECRET.length > 0,
+      typeof env.VK_APP_SECRET === "string" && env.VK_APP_SECRET.length >= 16,
     dataDirectory: env.STAGING_DATA_DIR === "/var/lib/stylist",
     port: !env.PORT || env.PORT === "8788",
   };
@@ -54,7 +54,9 @@ if (
       deploymentReady: false,
       blockers: [
         "host_isolation_unverified",
-        "cv_lock_and_models_unapproved",
+        "tls_and_log_policy_unverified",
+        "tester_access_unapproved",
+        "finite_retention_unapproved",
         "billing_controller_unconnected",
         "release_evidence_missing",
       ],
