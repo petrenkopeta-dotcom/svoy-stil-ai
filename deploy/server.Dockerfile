@@ -21,6 +21,7 @@ WORKDIR /opt/stylist
 COPY --from=verify --chown=node:node /app/package.json ./package.json
 COPY --from=verify --chown=node:node /app/server ./server
 COPY --from=verify --chown=node:node /app/src/vkProfileContract.js /app/src/vkWardrobeMetadataContract.js ./src/
+COPY --from=verify --chown=node:node /app/src/vkStagingJourney.js /app/src/vkStagingCity.js ./src/
 COPY --from=verify --chown=node:node /app/scripts/server-start.mjs ./scripts/server-start.mjs
 COPY --from=verify --chown=node:node /app/scripts/server-preflight.mjs ./scripts/server-preflight.mjs
 USER node

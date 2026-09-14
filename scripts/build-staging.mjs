@@ -56,6 +56,8 @@ if (
         .map((name) => `server/${name}`),
       "src/vkProfileContract.js",
       "src/vkWardrobeMetadataContract.js",
+      "src/vkStagingJourney.js",
+      "src/vkStagingCity.js",
       "scripts/server-start.mjs",
       "scripts/server-preflight.mjs",
       "deploy/nginx-staging.conf",
