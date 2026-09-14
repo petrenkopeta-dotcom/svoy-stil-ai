@@ -47,7 +47,9 @@ test("security followup: synchronous double confirm preserves one successful res
     }
     if (path.endsWith(saved.id))
       return route.fulfill({ contentType: "image/png", body: png });
-    return route.fulfill({ json: { items: [], authenticated: true } });
+    return route.fulfill({
+      json: { items: [], authenticated: true, userId: "vk:123:2" },
+    });
   });
   try {
     await page.goto("/");
@@ -103,7 +105,12 @@ test("security followup: budget retry preserves exact launch without browser per
         });
     }
     return route.fulfill({
-      json: { photos: false, items: [], authenticated: true },
+      json: {
+        photos: false,
+        items: [],
+        authenticated: true,
+        userId: "vk:123:2",
+      },
     });
   });
   await page.goto(`/?${launch}`);
@@ -135,7 +142,12 @@ test("SEC-02: synchronous double logout must preserve a confirmed signed-out sta
         : route.fulfill({ status: 401, json: { code: "session_required" } });
     }
     return route.fulfill({
-      json: { photos: false, items: [], authenticated: true },
+      json: {
+        photos: false,
+        items: [],
+        authenticated: true,
+        userId: "vk:123:2",
+      },
     });
   });
   await page.goto("/");

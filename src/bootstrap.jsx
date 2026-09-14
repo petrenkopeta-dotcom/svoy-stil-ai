@@ -1,3 +1,4 @@
+import "./vkLaunchEntry.js";
 import React from "react";
 import { createRoot } from "react-dom/client";
 // The local prototype has its own styles, persistence and telemetry. Do not

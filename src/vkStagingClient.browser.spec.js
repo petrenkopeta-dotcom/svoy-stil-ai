@@ -58,7 +58,7 @@ test("synthetic photo UI distinguishes empty, timeout, confirmation, read-back, 
       return route.fulfill({ contentType: "image/png", body: png });
     if (path.endsWith("photos"))
       return route.fulfill({ json: { items: persisted ? [saved] : [] } });
-    return route.fulfill({ json: { authenticated: true } });
+    return route.fulfill({ json: { authenticated: true, userId: "vk:123:2" } });
   });
   await page.goto("/?vk_app_id=123&sign=synthetic");
   const status = page.getByRole("status");
@@ -114,10 +114,13 @@ test("budget recovery offers retry after initial denied VK login", async ({
         status: 503,
         json: { code: "staging_budget_blocked" },
       });
-    if (path.endsWith("session") && !path.endsWith("vk-session"))
-      return route.fulfill({ status: 401, json: { code: "session_required" } });
     return route.fulfill({
-      json: { items: [], photos: false, authenticated: true },
+      json: {
+        items: [],
+        photos: false,
+        authenticated: true,
+        userId: "vk:123:2",
+      },
     });
   });
   await page.goto("/?vk_app_id=123&sign=synthetic");
@@ -152,7 +155,7 @@ test("bounded inventory tells the user older photos are not displayed", async ({
     if (path.endsWith("photos")) return route.fulfill({ json: { items } });
     if (/\/photos\//.test(path))
       return route.fulfill({ contentType: "image/png", body: png });
-    return route.fulfill({ json: { authenticated: true } });
+    return route.fulfill({ json: { authenticated: true, userId: "vk:123:2" } });
   });
   await page.goto("/");
   await expect(page.getByRole("status")).toHaveAttribute("data-state", "ready");
@@ -201,7 +204,7 @@ test("double confirmation sends one request; a lost response recovers by refresh
       return route.fulfill({ json: { items: persisted ? [saved] : [] } });
     if (path.endsWith(saved.id))
       return route.fulfill({ contentType: "image/png", body: png });
-    return route.fulfill({ json: { authenticated: true } });
+    return route.fulfill({ json: { authenticated: true, userId: "vk:123:2" } });
   });
   try {
     await page.goto("/");
@@ -272,7 +275,12 @@ for (const exit of ["logout", "leave"])
           json: { code: "session_required" },
         });
       return route.fulfill({
-        json: { authenticated: true, photos: true, items: [] },
+        json: {
+          authenticated: true,
+          userId: "vk:123:2",
+          photos: true,
+          items: [],
+        },
       });
     });
     try {
@@ -332,7 +340,12 @@ for (const failFirst of [false, true])
         return route.fulfill({ json: { signedOut: true } });
       }
       return route.fulfill({
-        json: { authenticated: true, photos: false, items: [] },
+        json: {
+          authenticated: true,
+          userId: "vk:123:2",
+          photos: false,
+          items: [],
+        },
       });
     });
     await page.goto("/");
@@ -407,7 +420,12 @@ test("logout interrupts confirmation and ignores its late saved response", async
       return route.fulfill({ json: { signedOut: true } });
     }
     return route.fulfill({
-      json: { authenticated: true, photos: true, items: [] },
+      json: {
+        authenticated: true,
+        userId: "vk:123:2",
+        photos: true,
+        items: [],
+      },
     });
   });
   try {
@@ -447,4 +465,76 @@ test("logout interrupts confirmation and ignores its late saved response", async
   } finally {
     releaseConfirm();
   }
+});
+for (const failure of [
+  "lost",
+  "old-cookie",
+  "missing-identity",
+  "expired-session",
+]) {
+  test(`launch entry closes before wardrobe: ${failure}`, async ({ page }) => {
+    const requests = [];
+    const errors = [];
+    page.on("console", (message) => errors.push(message.text()));
+    await page.route("**/api/staging/**", async (route) => {
+      const request = route.request(),
+        path = new URL(request.url()).pathname;
+      requests.push(path);
+      expect(request.headers().referer).toBeUndefined();
+      if (path.endsWith("vk-session")) {
+        expect(request.postData()).toBe(
+          "vk_app_id=123&sign=synthetic-private-B",
+        );
+        if (failure === "lost") return route.abort("failed");
+        return route.fulfill({ json: { userId: "vk:123:2" } });
+      }
+      if (path.endsWith("session")) {
+        if (failure === "expired-session")
+          return route.fulfill({
+            status: 401,
+            json: { code: "session_required" },
+          });
+        return route.fulfill({
+          json:
+            failure === "missing-identity"
+              ? { authenticated: true }
+              : { authenticated: true, userId: "vk:123:1" },
+        });
+      }
+      return route.fulfill({ json: { items: [] } });
+    });
+    await page.goto(
+      "/?vk_app_id=123&sign=synthetic-private-B#private-fragment",
+    );
+    await expect(page.getByRole("status")).toContainText(
+      "откройте его заново из VK",
+    );
+    expect(new URL(page.url()).search).toBe("");
+    expect(new URL(page.url()).hash).toBe("");
+    expect(requests.some((path) => path.endsWith("wardrobe"))).toBe(false);
+    await expect(
+      page.getByRole("button", { name: "Повторить вход", exact: true }),
+    ).toHaveCount(0);
+    expect(
+      await page.evaluate(() => ({
+        local: { ...localStorage },
+        session: { ...sessionStorage },
+      })),
+    ).toEqual({ local: {}, session: {} });
+    expect(errors.join(" ")).not.toContain("synthetic-private-B");
+  });
+}
+test("direct anonymous URL explains VK entry without loading wardrobe", async ({
+  page,
+}) => {
+  const requests = [];
+  await page.route("**/api/staging/**", (route) => {
+    requests.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ status: 401, json: { code: "session_required" } });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("status")).toContainText(
+    "По прямой ссылке без действующей сессии",
+  );
+  expect(requests).toEqual(["/api/staging/session"]);
 });

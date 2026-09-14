@@ -13,7 +13,9 @@ test("VK entry clears launch query, saves metadata and restores server wardrobe"
     if (path.endsWith("wardrobe") && request.method() === "PUT")
       items = JSON.parse(request.postData());
     await route.fulfill({
-      json: path.endsWith("wardrobe") ? { items } : { authenticated: true },
+      json: path.endsWith("wardrobe")
+        ? { items }
+        : { authenticated: true, userId: "vk:123:2" },
     });
   });
   await page.goto("/?vk_app_id=123&sign=synthetic");

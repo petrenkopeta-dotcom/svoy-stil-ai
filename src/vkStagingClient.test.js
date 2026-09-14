@@ -11,7 +11,9 @@ test("VK client sends launch only in same-origin body and verifies saved metadat
       return {
         ok: true,
         json: async () =>
-          url.endsWith("wardrobe") && options.method === "GET" ? { items } : {},
+          url.endsWith("wardrobe") && options.method === "GET"
+            ? { items }
+            : { authenticated: true, userId: "vk:1:2" },
       };
     },
   });
@@ -201,8 +203,8 @@ test("budget-denied launch retries unchanged, expires server-side, and clears on
     [launch, launch],
   );
   status = 200;
-  await client.login();
-  assert.equal(calls.at(-1).url, "/api/staging/session");
+  await assert.rejects(client.login(), /vk_launch_reopen_required/);
+  assert.equal(calls.length, 2);
   client.close();
 
   let finishLogin;
@@ -228,8 +230,8 @@ test("budget-denied launch retries unchanged, expires server-side, and clears on
   await pendingClient.logout();
   finishLogin();
   await pending;
-  await pendingClient.login();
-  assert.equal(pendingCalls.at(-1), "/api/staging/session");
+  await assert.rejects(pendingClient.login(), /vk_launch_reopen_required/);
+  assert.equal(pendingCalls.at(-1), "/api/staging/logout");
   pendingClient.close();
 });
 

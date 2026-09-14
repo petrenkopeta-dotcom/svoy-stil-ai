@@ -13,7 +13,7 @@ test("security retry: only explicit budget denial retains unchanged launch", asy
       calls.push({ url, body: options.body });
       return denied
         ? Response.json({ code: "staging_budget_blocked" }, { status: 503 })
-        : Response.json({});
+        : Response.json({ authenticated: true, userId: "vk:123:2" });
     },
   });
   try {
@@ -54,9 +54,8 @@ test("security retry: rejection and ambiguous failures cannot replay launch", as
     });
     try {
       await assert.rejects(client.login());
-      await client.login();
-      assert.equal(calls[1].url, "/api/staging/session");
-      assert.equal(calls[1].body, undefined);
+      await assert.rejects(client.login(), /vk_launch_reopen_required/);
+      assert.equal(calls.length, 1);
     } finally {
       client.close();
     }
@@ -94,8 +93,8 @@ test("security retry: late budget denial cannot restore credentials after logout
         await assert.rejects(client.login(), /client_closed/);
         assert.equal(calls.length, count);
       } else {
-        await client.login();
-        assert.equal(calls.at(-1), "/api/staging/session");
+        await assert.rejects(client.login(), /vk_launch_reopen_required/);
+        assert.equal(calls.at(-1), "/api/staging/logout");
       }
       assert.equal(calls.filter((url) => url.endsWith("vk-session")).length, 1);
     } finally {
