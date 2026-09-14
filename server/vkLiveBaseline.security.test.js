@@ -60,6 +60,7 @@ async function fixture(t, mode = "synthetic-admission") {
       VK_APP_ID: "123",
       VK_APP_SECRET: secret,
       PORT: "0",
+      STAGING_TESTER_IDS: mode === "synthetic-admission" ? '["11","22"]' : "[]",
     };
     const source = `
       import {startStagingServer} from ${JSON.stringify(new URL("./stagingServer.mjs", import.meta.url).href)};
