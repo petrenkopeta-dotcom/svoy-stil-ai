@@ -61,7 +61,7 @@ async function fixture(t, { profiles = false } = {}) {
     // Actual child process restart, no shared database handles or JS session state.
     const source = `
       import { startStagingServer } from ${JSON.stringify(new URL("./stagingServer.mjs", import.meta.url).href)};
-      const server = startStagingServer({ env: ${JSON.stringify(env)}, budgetAllowed: () => true, profileAllowed: () => ${profiles === true} });
+      const server = startStagingServer({ env: ${JSON.stringify(env)}, budgetAllowed: () => true, testerAllowed: () => true, profileAllowed: () => ${profiles === true} });
       server.once("listening", () => process.send(server.address().port));
       process.once("message", () => server.close(() => process.disconnect()));
     `;

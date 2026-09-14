@@ -56,6 +56,7 @@ test("security HTTP journey: capabilities and bounded photo list preserve auth, 
       PORT: "0",
     },
     budgetAllowed: () => budget,
+    testerAllowed: () => true,
     photoFlow: flow,
   });
   t.after(async () => {

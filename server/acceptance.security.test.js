@@ -196,6 +196,7 @@ function apiFixture(t) {
     origin: "https://example.test",
     now: () => 1000000,
     budgetAllowed: () => allowed,
+    testerAllowed: () => true,
     photoFlow: {
       enabled: () => true,
       analyze: async () => {

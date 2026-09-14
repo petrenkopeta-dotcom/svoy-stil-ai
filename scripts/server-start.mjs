@@ -39,7 +39,11 @@ if (
     const stop = () => {
       status.close();
       app.close();
-      setTimeout(() => process.exit(1), 5000).unref();
+      setTimeout(() => {
+        app.closeAllConnections();
+        status.closeAllConnections();
+        process.exitCode = 1;
+      }, 21_000).unref();
     };
     for (const server of [app, status])
       server.on("error", () => {
