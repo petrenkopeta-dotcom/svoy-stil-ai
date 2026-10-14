@@ -34,7 +34,7 @@
     "vite": "8.1.5"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0",
-    "prettier": "3.9.6"
+    "@playwright/test": "1.64.0",
+    "prettier": "3.9.10"
   }
 }
